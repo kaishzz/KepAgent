@@ -1,0 +1,488 @@
+# Copy this file to agent.yaml, then configure your node-specific settings.
+# Sensitive values are loaded from .env.
+api_base_url: "${KEPAGENT_API_BASE_URL}"
+api_key: "${KEPAGENT_API_KEY}"
+poll_interval_seconds: 3
+heartbeat_interval_seconds: 5
+request_timeout_seconds: 15
+docker_base_url: null
+group_labels:
+  all: "全部"
+  xl: "训练服"
+  pt: "跑图服"
+  ks: "开水测试服"
+rcon_host: "127.0.0.1"
+rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
+rcon_timeout_seconds: 5
+steamcmd_sh: "/data/steamcmd/steamcmd.sh"
+cs2_root: "/data/cs2"
+app_id: 730
+monitor_server_key: "ks"
+monitor_poll_interval_seconds: 5
+monitor_stable_seconds: 120
+monitor_recover_timeout_seconds: 120
+monitor_restart_threshold: 2
+
+servers:
+  - key: "xl1"
+    container_name: "kepcs2-xl-28010"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_1.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28010
+        container_port: 28010
+        protocol: "tcp"
+      - host_port: 28010
+        container_port: 28010
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl1"
+      kepcs.exec_cfg: "z_xl_1.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "xl2"
+    container_name: "kepcs2-xl-28020"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_2.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28020
+        container_port: 28020
+        protocol: "tcp"
+      - host_port: 28020
+        container_port: 28020
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl2"
+      kepcs.exec_cfg: "z_xl_2.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "xl3"
+    container_name: "kepcs2-xl-28030"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_3.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28030
+        container_port: 28030
+        protocol: "tcp"
+      - host_port: 28030
+        container_port: 28030
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl3"
+      kepcs.exec_cfg: "z_xl_3.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "xl4"
+    container_name: "kepcs2-xl-28040"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_4.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28040
+        container_port: 28040
+        protocol: "tcp"
+      - host_port: 28040
+        container_port: 28040
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl4"
+      kepcs.exec_cfg: "z_xl_4.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "xl5"
+    container_name: "kepcs2-xl-28050"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28050 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_5.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28050
+        container_port: 28050
+        protocol: "tcp"
+      - host_port: 28050
+        container_port: 28050
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl5"
+      kepcs.exec_cfg: "z_xl_5.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "xl6"
+    container_name: "kepcs2-xl-28060"
+    image: "steamrt3:latest"
+    groups: ["all", "xl"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 28060 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_xl_6.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 28060
+        container_port: 28060
+        protocol: "tcp"
+      - host_port: 28060
+        container_port: 28060
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl6"
+      kepcs.exec_cfg: "z_xl_6.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt1"
+    container_name: "kepcs2-pt-29010"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_1.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29010
+        container_port: 29010
+        protocol: "tcp"
+      - host_port: 29010
+        container_port: 29010
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt1"
+      kepcs.exec_cfg: "z_pt_1.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt2"
+    container_name: "kepcs2-pt-29020"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_2.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29020
+        container_port: 29020
+        protocol: "tcp"
+      - host_port: 29020
+        container_port: 29020
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt2"
+      kepcs.exec_cfg: "z_pt_2.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt3"
+    container_name: "kepcs2-pt-29030"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_3.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29030
+        container_port: 29030
+        protocol: "tcp"
+      - host_port: 29030
+        container_port: 29030
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt3"
+      kepcs.exec_cfg: "z_pt_3.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt4"
+    container_name: "kepcs2-pt-29040"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_4.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29040
+        container_port: 29040
+        protocol: "tcp"
+      - host_port: 29040
+        container_port: 29040
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt4"
+      kepcs.exec_cfg: "z_pt_4.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt5"
+    container_name: "kepcs2-pt-29050"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29050 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_5.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29050
+        container_port: 29050
+        protocol: "tcp"
+      - host_port: 29050
+        container_port: 29050
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt5"
+      kepcs.exec_cfg: "z_pt_5.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt6"
+    container_name: "kepcs2-pt-29060"
+    image: "steamrt3:latest"
+    groups: ["all", "pt"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 29060 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_pt_6.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 29060
+        container_port: 29060
+        protocol: "tcp"
+      - host_port: 29060
+        container_port: 29060
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt6"
+      kepcs.exec_cfg: "z_pt_6.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "ks"
+    container_name: "kepcs2-pt-32010"
+    image: "steamrt3:latest"
+    groups: ["all", "ks"]
+    entrypoint: ["/entrypoint.sh"]
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 32010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_ks.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 32010
+        container_port: 32010
+        protocol: "tcp"
+      - host_port: 32010
+        container_port: 32010
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
+      - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
+        container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
+        mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "pt"
+      kepcs.server_key: "ks"
+      kepcs.exec_cfg: "z_ks.cfg"
+    restart_policy: "unless-stopped"

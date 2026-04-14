@@ -1,0 +1,50 @@
+name: Build Linux (Debian 11 compatible)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-debian11:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build inside Debian 11 (bullseye) container with Python 3.12
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/app" -w /app python:3.12-bullseye bash -lc '
+            set -e
+
+            echo "== System info =="
+            cat /etc/os-release || true
+            python -V
+            pip -V
+
+            apt-get update &&
+            apt-get install -y --no-install-recommends \
+              build-essential \
+              libssl-dev \
+              libffi-dev \
+              patchelf \
+            && rm -rf /var/lib/apt/lists/*
+
+            python -m venv .venv
+            . .venv/bin/activate
+
+            pip install -U pip
+            pip install -r requirements.txt
+            pip install pyinstaller
+
+            pyinstaller --noconfirm --clean --name kepagent --onefile main.py
+          '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: kepagent-debian11
+          path: dist/kepagent
