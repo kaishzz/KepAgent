@@ -94,6 +94,62 @@ pip install -r requirements.txt
 python main.py --config agent.yaml
 ```
 
+## 使用 systemd 托管
+
+生产环境建议使用 `systemd` 托管 Agent，而不是 `crontab` 或 `screen`。下面的示例假设部署目录为 `/opt/kepagent`，并且目录中已经包含：
+
+- `kepagent`
+- `agent.yaml`
+- `.env`
+
+创建服务文件：
+
+```bash
+cat >/etc/systemd/system/kepagent.service <<'EOF'
+[Unit]
+Description=KepAgent
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kepagent
+ExecStart=/opt/kepagent/kepagent --config /opt/kepagent/agent.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+加载并启动服务：
+
+```bash
+systemctl daemon-reload
+systemctl enable kepagent
+systemctl start kepagent
+```
+
+常用管理命令：
+
+```bash
+systemctl status kepagent
+systemctl restart kepagent
+systemctl stop kepagent
+journalctl -u kepagent -f
+```
+
+如果之前已经使用 `crontab` 在开机时启动 Agent，请删除旧配置，避免重复启动：
+
+```bash
+crontab -e
+```
+
 ## 进入 CS2 控制台
 
 当某个服务器配置了 `stdin_open: true` 和 `tty: true` 后，Agent 启动出来的容器支持直接附着到 CS2 控制台：
