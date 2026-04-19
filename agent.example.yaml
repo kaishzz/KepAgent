@@ -455,6 +455,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "ks"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"

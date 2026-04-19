@@ -56,6 +56,13 @@ cp agent.example.yaml agent.yaml
 
 `agent.yaml` 中的敏感字段会自动从 `.env` 读取。
 
+可选字段：
+
+- `stdin_open`：为容器打开标准输入，便于 `docker attach`
+- `tty`：为容器分配 TTY，便于进入交互式控制台
+
+如果希望进入 CS2 控制台交互，请为对应服务器同时设置这两个字段为 `true`。
+
 ## 已实现命令
 
 - `agent.ping`
@@ -85,4 +92,19 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 python main.py --config agent.yaml
+```
+
+## 进入 CS2 控制台
+
+当某个服务器配置了 `stdin_open: true` 和 `tty: true` 后，Agent 启动出来的容器支持直接附着到 CS2 控制台：
+
+```bash
+docker attach kepcs2-pt-32010
+```
+
+从 `attach` 会话安全退出而不停止服务器：
+
+```bash
+Ctrl-p
+Ctrl-q
 ```

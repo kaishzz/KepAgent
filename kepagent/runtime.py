@@ -158,6 +158,8 @@ class DockerRuntime:
             command=server.command or None,
             name=server.container_name,
             detach=True,
+            stdin_open=server.stdin_open,
+            tty=server.tty,
             environment=server.env,
             ports=self._ports_value(server.ports),
             volumes=self._volumes_value(server.volumes),
