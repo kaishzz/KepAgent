@@ -42,7 +42,7 @@ cp .env.example .env
 
 - `KEPAGENT_API_BASE_URL`：控制平面地址
 - `KEPAGENT_API_KEY`：Agent API Key
-- `KEPAGENT_RCON_PASSWORD`：RCON 密码
+- `KEPAGENT_RCON_PASSWORD`：可选的全局 RCON 兜底密码
 
 `.env` 已加入 `.gitignore`，不会被提交到仓库。
 
@@ -56,10 +56,19 @@ cp agent.example.yaml agent.yaml
 
 `agent.yaml` 中的敏感字段会自动从 `.env` 读取。
 
+RCON 密码优先级如下：
+
+- 控制台命令 payload 中按服务器透传的密码
+- `servers[].rcon_password`
+- 全局 `KEPAGENT_RCON_PASSWORD`
+
+如果你是通过 `kepcs` 控制台发送手动 RCON，控制台会优先从官网服务器目录数据库 `cs2_serverlist.servers.rcon_pwd` 读取每台服务器的密码并透传给 Agent，这种情况下全局 `KEPAGENT_RCON_PASSWORD` 可以留空。
+
 可选字段：
 
 - `stdin_open`：为容器打开标准输入，便于 `docker attach`
 - `tty`：为容器分配 TTY，便于进入交互式控制台
+- `rcon_password`：单台服务器自己的 RCON 兜底密码，适合不想共用全局密码时使用
 
 如果希望进入 CS2 控制台交互，请为对应服务器同时设置这两个字段为 `true`。
 

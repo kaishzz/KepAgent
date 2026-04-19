@@ -12,6 +12,7 @@ group_labels:
   pt: "跑图服"
   ks: "开水测试服"
 rcon_host: "127.0.0.1"
+# Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
 rcon_timeout_seconds: 5
 steamcmd_sh: "/data/steamcmd/steamcmd.sh"
@@ -28,6 +29,8 @@ servers:
     container_name: "kepcs2-xl-28010"
     image: "steamrt3:latest"
     groups: ["all", "xl"]
+    # Optional per-server fallback when the command payload does not carry a password.
+    # rcon_password: ""
     entrypoint: ["/entrypoint.sh"]
     command:
       - "bash"

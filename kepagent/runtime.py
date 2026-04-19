@@ -67,6 +67,25 @@ class DockerRuntime:
     def _servers_for_group(self, group: str) -> list[ServerDefinition]:
         return self.get_group(group)
 
+    def _servers_for_keys(self, keys: list[str]) -> list[ServerDefinition]:
+        normalized_keys = []
+        seen = set()
+
+        for value in keys:
+            safe_value = str(value or "").strip()
+            if safe_value and safe_value not in seen:
+                normalized_keys.append(safe_value)
+                seen.add(safe_value)
+
+        if not normalized_keys:
+            raise RuntimeError("No server keys provided")
+
+        missing_keys = [key for key in normalized_keys if key not in self._servers]
+        if missing_keys:
+            raise RuntimeError(f"Unknown server keys: {', '.join(missing_keys)}")
+
+        return [self._servers[key] for key in normalized_keys]
+
     def _get_container(self, container_name: str):
         try:
             return self.client.containers.get(container_name)
@@ -289,46 +308,73 @@ class DockerRuntime:
             "missingServers": sum(1 for item in servers if item["state"] == "missing"),
         }
 
-    def send_rcon_command(self, group: str, command: str) -> dict[str, Any]:
-        if not self.config.rcon_password:
-            raise RuntimeError("RCON password is empty")
-
+    def send_rcon_command(
+        self,
+        group: str,
+        command: str,
+        *,
+        server_keys: list[str] | None = None,
+        targets: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         try:
             from rcon import Client
         except ImportError as exc:  # pragma: no cover - depends on deployment package
             raise RuntimeError("Python rcon package is not installed") from exc
 
-        targets = self._servers_for_group(group)
+        override_password_by_key: dict[str, str] = {}
+        if isinstance(targets, list):
+            for item in targets:
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("key") or "").strip()
+                password = str(item.get("password") or "").strip()
+                if key and password:
+                    override_password_by_key[key] = password
+
+        effective_server_keys = server_keys or list(override_password_by_key.keys())
+        resolved_targets = (
+            self._servers_for_keys(effective_server_keys)
+            if effective_server_keys
+            else self._servers_for_group(group)
+        )
         results = []
         success = 0
 
-        for server in targets:
-          port = self._server_primary_port(server)
-          response_text = ""
-          ok = False
-          error_message = ""
-          try:
-              with Client(
-                  self.config.rcon_host,
-                  port,
-                  passwd=self.config.rcon_password,
-                  timeout=self.config.rcon_timeout_seconds,
-              ) as client:
-                  response_text = str(client.run(command) or "").strip()
-              ok = True
-              success += 1
-          except Exception as exc:  # noqa: BLE001
-              error_message = str(exc)
+        for server in resolved_targets:
+            port = self._server_primary_port(server)
+            response_text = ""
+            ok = False
+            error_message = ""
+            password = (
+                override_password_by_key.get(server.key)
+                or str(server.rcon_password or "").strip()
+                or self.config.rcon_password
+            )
+            try:
+                if not str(password or "").strip():
+                    raise RuntimeError("RCON password is empty")
 
-          results.append(
-              {
-                  "key": server.key,
-                  "port": port,
-                  "ok": ok,
-                  "response": response_text,
-                  "error": error_message or None,
-              }
-          )
+                with Client(
+                    self.config.rcon_host,
+                    port,
+                    passwd=password,
+                    timeout=self.config.rcon_timeout_seconds,
+                ) as client:
+                    response_text = str(client.run(command) or "").strip()
+                ok = True
+                success += 1
+            except Exception as exc:  # noqa: BLE001
+                error_message = str(exc)
+
+            results.append(
+                {
+                    "key": server.key,
+                    "port": port,
+                    "ok": ok,
+                    "response": response_text,
+                    "error": error_message or None,
+                }
+            )
 
         return {
             "group": group,

@@ -36,6 +36,7 @@ class ServerDefinition(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
     working_dir: str | None = None
     network_mode: str | None = None
+    rcon_password: str = ""
     stdin_open: bool = False
     tty: bool = False
     restart_policy: str = "unless-stopped"

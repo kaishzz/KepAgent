@@ -140,10 +140,21 @@ class KepAgentApp:
     def _handle_rcon_command(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
         group = str(payload.get("group") or "ALL").strip() or "ALL"
         command = str(payload.get("command") or "").strip()
+        server_keys = [
+            str(value or "").strip()
+            for value in (payload.get("serverKeys") or [])
+            if str(value or "").strip()
+        ]
+        targets = payload.get("targets") if isinstance(payload.get("targets"), list) else None
         if not command:
             raise RuntimeError("RCON command cannot be empty")
 
-        result = self.runtime.send_rcon_command(group, command)
+        result = self.runtime.send_rcon_command(
+            group,
+            command,
+            server_keys=server_keys or None,
+            targets=targets,
+        )
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
