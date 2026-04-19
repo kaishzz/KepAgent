@@ -9,6 +9,7 @@ from typing import Any
 
 from .api import ControlPlaneClient
 from .config import AgentConfig, load_config
+from .constants import AGENT_VERSION, SUPPORTED_COMMANDS
 from .runtime import DockerRuntime
 
 LOGGER = logging.getLogger("kepagent")
@@ -23,32 +24,41 @@ class KepAgentApp:
             timeout_seconds=config.request_timeout_seconds,
         )
         self.runtime = DockerRuntime(config)
+        self.command_handlers = {
+            "agent.ping": self._handle_ping,
+            "docker.list_servers": self._handle_list_servers,
+            "docker.start_server": self._handle_start_server,
+            "docker.stop_server": self._handle_stop_server,
+            "docker.restart_server": self._handle_restart_server,
+            "docker.remove_server": self._handle_remove_server,
+            "docker.start_group": self._handle_start_group,
+            "docker.stop_group": self._handle_stop_group,
+            "docker.restart_group": self._handle_restart_group,
+            "node.kill_all": self._handle_kill_all,
+            "node.rcon_command": self._handle_rcon_command,
+            "node.check_update": self._handle_check_update,
+            "node.check_validate": self._handle_check_validate,
+            "node.check_update_monitor": self._handle_check_update_monitor,
+            "node.check_update_start": self._handle_check_update_start,
+            "node.get_oldver": self._handle_get_oldver,
+            "node.get_nowver": self._handle_get_nowver,
+            "node.monitor_check": self._handle_monitor_check,
+            "node.monitor_start": self._handle_monitor_start,
+        }
+        missing_handlers = set(SUPPORTED_COMMANDS) - set(self.command_handlers)
+        extra_handlers = set(self.command_handlers) - set(SUPPORTED_COMMANDS)
+        if missing_handlers or extra_handlers:
+            raise RuntimeError(
+                "Command catalog mismatch: "
+                f"missing={sorted(missing_handlers)} extra={sorted(extra_handlers)}"
+            )
 
     def build_heartbeat_payload(self) -> dict[str, Any]:
         return {
-            "agentVersion": "0.1.0",
+            "agentVersion": AGENT_VERSION,
             "hostname": socket.gethostname(),
             "platform": f"{platform.system()} {platform.release()}",
-            "capabilities": [
-                "docker.start_server",
-                "docker.stop_server",
-                "docker.restart_server",
-                "docker.remove_server",
-                "docker.start_group",
-                "docker.stop_group",
-                "docker.restart_group",
-                "docker.list_servers",
-                "node.kill_all",
-                "node.rcon_command",
-                "node.check_update",
-                "node.check_validate",
-                "node.check_update_monitor",
-                "node.check_update_start",
-                "node.get_oldver",
-                "node.get_nowver",
-                "node.monitor_check",
-                "node.monitor_start",
-            ],
+            "capabilities": list(SUPPORTED_COMMANDS),
             "summary": self.runtime.build_summary(),
             "stats": {
                 "pythonVersion": platform.python_version(),
@@ -202,29 +212,7 @@ class KepAgentApp:
         command_type = str(command.get("commandType") or "").strip()
         payload = command.get("payload") or {}
         logs: list[str] = [f"Executing command: {command_type}"]
-
-        handlers = {
-            "agent.ping": self._handle_ping,
-            "docker.list_servers": self._handle_list_servers,
-            "docker.start_server": self._handle_start_server,
-            "docker.stop_server": self._handle_stop_server,
-            "docker.restart_server": self._handle_restart_server,
-            "docker.remove_server": self._handle_remove_server,
-            "docker.start_group": self._handle_start_group,
-            "docker.stop_group": self._handle_stop_group,
-            "docker.restart_group": self._handle_restart_group,
-            "node.kill_all": self._handle_kill_all,
-            "node.rcon_command": self._handle_rcon_command,
-            "node.check_update": self._handle_check_update,
-            "node.check_validate": self._handle_check_validate,
-            "node.check_update_monitor": self._handle_check_update_monitor,
-            "node.check_update_start": self._handle_check_update_start,
-            "node.get_oldver": self._handle_get_oldver,
-            "node.get_nowver": self._handle_get_nowver,
-            "node.monitor_check": self._handle_monitor_check,
-            "node.monitor_start": self._handle_monitor_start,
-        }
-        handler = handlers.get(command_type)
+        handler = self.command_handlers.get(command_type)
         if handler is not None:
             return handler(payload, logs)
 
@@ -295,6 +283,7 @@ class KepAgentApp:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="KepCs Docker control agent")
     parser.add_argument("--config", default="agent.yaml", help="Path to agent YAML config")
+    parser.add_argument("--version", action="version", version=f"KepAgent {AGENT_VERSION}")
     return parser
 
 

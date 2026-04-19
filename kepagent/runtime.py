@@ -64,9 +64,6 @@ class DockerRuntime:
             raise RuntimeError(f"Unknown or empty group: {group}")
         return servers
 
-    def _servers_for_group(self, group: str) -> list[ServerDefinition]:
-        return self.get_group(group)
-
     def _servers_for_keys(self, keys: list[str]) -> list[ServerDefinition]:
         normalized_keys = []
         seen = set()
@@ -194,7 +191,7 @@ class DockerRuntime:
             "server": self.inspect_server(key),
         }
 
-    def stop_server(self, key: str, timeout: int = 10) -> dict[str, Any]:
+    def stop_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
         container = self._get_container(server.container_name)
 
@@ -442,7 +439,7 @@ class DockerRuntime:
         target.write_text(updated, encoding="utf-8")
         return {"changed": True, "message": "Metamod path inserted"}
 
-    def _run_update(self) -> dict[str, Any]:
+    def _run_app_update_validate(self) -> dict[str, Any]:
         self.remove_all()
         result = self._run_process(
             [
@@ -479,17 +476,21 @@ class DockerRuntime:
         }
 
     def check_validate(self) -> dict[str, Any]:
-        check = self.check_update()
-        if not check["needsUpdate"]:
-            return check
-
-        update = self._run_update()
+        before_build = self.get_oldver()["buildId"]
+        update = self._run_app_update_validate()
         latest = self.get_oldver()["buildId"]
         return {
-            **check,
-            "updated": True,
+            "validated": True,
+            "updated": before_build != latest,
+            "previousBuildId": before_build,
             "currentBuildId": latest,
-            "message": f"Updated to buildid {latest}",
+            "latestBuildId": latest,
+            "needsUpdate": False,
+            "message": (
+                f"Validated and updated to buildid {latest}"
+                if before_build != latest
+                else f"Validated current buildid {latest}"
+            ),
             "update": update,
         }
 
