@@ -10,7 +10,7 @@ group_labels:
   all: "全部"
   xl: "训练服"
   pt: "跑图服"
-  ks: "开水测试服"
+  ks: "测试服"
 rcon_host: "127.0.0.1"
 # Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
