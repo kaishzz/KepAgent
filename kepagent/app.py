@@ -10,7 +10,7 @@ from typing import Any
 from .api import ControlPlaneClient
 from .config import AgentConfig, load_config
 from .constants import AGENT_VERSION, SUPPORTED_COMMANDS
-from .runtime import DockerRuntime
+from .runtime import CommandCancelled, DockerRuntime
 
 LOGGER = logging.getLogger("kepagent")
 
@@ -80,6 +80,33 @@ class KepAgentApp:
             return
 
         self.client.append_command_logs(command_id, batch[:200])
+
+    def _read_cancel_request(self, command_id: str) -> dict[str, Any] | None:
+        try:
+            command = self.client.fetch_command(command_id)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.debug("Failed to refresh command state for %s: %s", command_id, exc)
+            return None
+
+        if not isinstance(command, dict):
+            return None
+
+        result = command.get("result")
+        if not isinstance(result, dict):
+            return None
+
+        control = result.get("control")
+        if not isinstance(control, dict):
+            return None
+
+        requested_at = str(control.get("cancellationRequestedAt") or "").strip()
+        if not requested_at:
+            return None
+
+        return {
+            "force": bool(control.get("force")),
+            "requestedAt": requested_at,
+        }
 
     @staticmethod
     def _command_key(payload: dict[str, Any]) -> str:
@@ -224,8 +251,12 @@ class KepAgentApp:
             return
 
         command_id = str(command["id"])
-        self.client.mark_command_started(command_id)
+        started = self.client.mark_command_started(command_id)
+        if str((started or {}).get("status") or "").strip().upper() == "CANCELLED":
+            LOGGER.info("Command %s was cancelled before execution", command_id)
+            return
 
+        self.runtime.set_cancel_reader(lambda: self._read_cancel_request(command_id))
         try:
             execution = self.execute_command(command)
             self.emit_logs(command_id, execution.get("logs", []))
@@ -233,6 +264,20 @@ class KepAgentApp:
                 command_id,
                 success=bool(execution.get("ok")),
                 result=execution.get("result"),
+            )
+        except CommandCancelled as exc:
+            LOGGER.warning("Command cancelled: %s", exc)
+            self.emit_logs(command_id, [str(exc)])
+            self.client.finish_command(
+                command_id,
+                success=False,
+                result={
+                    "cancelled": True,
+                    "force": exc.force,
+                    "message": str(exc),
+                },
+                error_message=str(exc),
+                cancelled=True,
             )
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Command execution failed")
@@ -242,6 +287,8 @@ class KepAgentApp:
                 success=False,
                 error_message=str(exc),
             )
+        finally:
+            self.runtime.set_cancel_reader(None)
 
     def run_forever(self) -> int:
         LOGGER.info("KepAgent starting")

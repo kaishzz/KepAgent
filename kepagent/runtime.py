@@ -5,12 +5,18 @@ import subprocess
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import docker
 from docker.errors import NotFound
 
 from .config import AgentConfig, PortBinding, ServerDefinition, VolumeBinding
+
+
+class CommandCancelled(RuntimeError):
+    def __init__(self, message: str, *, force: bool = False) -> None:
+        super().__init__(message)
+        self.force = force
 
 
 class DockerRuntime:
@@ -23,6 +29,7 @@ class DockerRuntime:
         )
         self._servers = {server.key: server for server in config.servers}
         self._groups = self._build_groups(config.servers)
+        self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
 
     @staticmethod
     def _build_groups(servers: list[ServerDefinition]) -> dict[str, list[ServerDefinition]]:
@@ -89,6 +96,28 @@ class DockerRuntime:
         except NotFound:
             return None
 
+    def set_cancel_reader(self, reader: Callable[[], dict[str, Any] | None] | None) -> None:
+        self._cancel_reader = reader
+
+    def _current_cancel_request(self) -> dict[str, Any] | None:
+        if self._cancel_reader is None:
+            return None
+
+        request = self._cancel_reader()
+        return request if isinstance(request, dict) else None
+
+    def _raise_if_cancel_requested(self) -> None:
+        request = self._current_cancel_request()
+        if not request:
+            return
+
+        raise CommandCancelled(
+            "Command force cancelled by operator"
+            if request.get("force")
+            else "Command cancelled by operator",
+            force=bool(request.get("force")),
+        )
+
     def _run_process(
         self,
         args: list[str],
@@ -96,22 +125,62 @@ class DockerRuntime:
         timeout_seconds: int = 600,
         cwd: str | None = None,
     ) -> dict[str, Any]:
-        completed = subprocess.run(
+        self._raise_if_cancel_requested()
+
+        process = subprocess.Popen(
             args,
             cwd=cwd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_seconds,
-            check=False,
         )
+
+        started_at = time.time()
+
+        while True:
+            request = self._current_cancel_request()
+            if request:
+                if request.get("force"):
+                    process.kill()
+                else:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+
+                try:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate()
+
+                raise CommandCancelled(
+                    "Command force cancelled by operator"
+                    if request.get("force")
+                    else "Command cancelled by operator",
+                    force=bool(request.get("force")),
+                )
+
+            if time.time() - started_at > timeout_seconds:
+                process.kill()
+                process.communicate()
+                raise RuntimeError(f"Process timed out after {timeout_seconds} seconds")
+
+            try:
+                stdout, stderr = process.communicate(timeout=1)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+
         output = "\n".join(
             part.strip()
-            for part in [completed.stdout, completed.stderr]
+            for part in [stdout, stderr]
             if str(part or "").strip()
         ).strip()
         return {
-            "ok": completed.returncode == 0,
-            "code": completed.returncode,
+            "ok": process.returncode == 0,
+            "code": process.returncode,
             "output": output,
         }
 
@@ -248,6 +317,7 @@ class DockerRuntime:
         changed = 0
 
         for server in servers:
+            self._raise_if_cancel_requested()
             method = getattr(self, f"{action}_server")
             result = method(server.key)
             results.append(result)
@@ -267,6 +337,7 @@ class DockerRuntime:
         changed = 0
 
         for server in self.config.servers:
+            self._raise_if_cancel_requested()
             method = getattr(self, f"{action}_server")
             result = method(server.key)
             results.append(result)
@@ -332,12 +403,13 @@ class DockerRuntime:
         resolved_targets = (
             self._servers_for_keys(effective_server_keys)
             if effective_server_keys
-            else self._servers_for_group(group)
+            else self.get_group(group)
         )
         results = []
         success = 0
 
         for server in resolved_targets:
+            self._raise_if_cancel_requested()
             port = self._server_primary_port(server)
             response_text = ""
             ok = False
@@ -384,6 +456,7 @@ class DockerRuntime:
         }
 
     def get_oldver(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         manifest_path = Path(self.config.cs2_root) / "steamapps" / f"appmanifest_{self.config.app_id}.acf"
         if not manifest_path.exists():
             raise RuntimeError(f"Manifest not found: {manifest_path}")
@@ -400,6 +473,7 @@ class DockerRuntime:
         }
 
     def get_nowver(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         result = self._run_process(
             [
                 self.config.steamcmd_sh,
@@ -426,6 +500,7 @@ class DockerRuntime:
         }
 
     def ensure_metamod_path(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         target = Path(self.config.cs2_root) / "game" / "csgo" / "gameinfo.gi"
         if not target.exists():
             raise RuntimeError(f"gameinfo.gi not found: {target}")
@@ -440,6 +515,7 @@ class DockerRuntime:
         return {"changed": True, "message": "Metamod path inserted"}
 
     def _run_app_update_validate(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         self.remove_all()
         result = self._run_process(
             [
@@ -465,6 +541,7 @@ class DockerRuntime:
         }
 
     def check_update(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         local_build = self.get_oldver()["buildId"]
         remote_build = self.get_nowver()["buildId"]
         needs_update = local_build != remote_build
@@ -476,6 +553,7 @@ class DockerRuntime:
         }
 
     def check_validate(self) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         before_build = self.get_oldver()["buildId"]
         update = self._run_app_update_validate()
         latest = self.get_oldver()["buildId"]
@@ -495,6 +573,7 @@ class DockerRuntime:
         }
 
     def monitor_check(self, start_after_success: bool = False) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
         monitor_key = self.config.monitor_server_key or (self.config.servers[0].key if self.config.servers else "")
         if not monitor_key:
             raise RuntimeError("No monitor server key configured")
@@ -512,6 +591,7 @@ class DockerRuntime:
         timeline: list[dict[str, Any]] = []
 
         while True:
+            self._raise_if_cancel_requested()
             container = self._get_container(server.container_name)
             if not container:
                 raise RuntimeError(f"Monitor container missing: {server.container_name}")

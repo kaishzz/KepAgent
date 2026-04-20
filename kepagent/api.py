@@ -70,6 +70,10 @@ class ControlPlaneClient:
         data = self._request("POST", "/agent/api/commands/claim")
         return data.get("command")
 
+    def fetch_command(self, command_id: str) -> dict[str, Any] | None:
+        data = self._request("GET", f"/agent/api/commands/{command_id}")
+        return data.get("command")
+
     def mark_command_started(self, command_id: str) -> dict[str, Any]:
         return self._request("POST", f"/agent/api/commands/{command_id}/start")
 
@@ -83,9 +87,11 @@ class ControlPlaneClient:
         success: bool,
         result: dict[str, Any] | list[Any] | str | None = None,
         error_message: str | None = None,
+        cancelled: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "success": success,
+            "cancelled": cancelled,
         }
         if result is not None:
             payload["result"] = result
