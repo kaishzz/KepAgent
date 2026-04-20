@@ -38,8 +38,6 @@ class KepAgentApp:
             "node.rcon_command": self._handle_rcon_command,
             "node.check_update": self._handle_check_update,
             "node.check_validate": self._handle_check_validate,
-            "node.check_update_monitor": self._handle_check_update_monitor,
-            "node.check_update_start": self._handle_check_update_start,
             "node.get_oldver": self._handle_get_oldver,
             "node.get_nowver": self._handle_get_nowver,
             "node.monitor_check": self._handle_monitor_check,
@@ -115,6 +113,26 @@ class KepAgentApp:
     @staticmethod
     def _command_group(payload: dict[str, Any]) -> str:
         return str(payload.get("group", "")).strip()
+
+    @staticmethod
+    def _command_server_keys(payload: dict[str, Any], field_name: str = "startServerKeys") -> list[str]:
+        values = payload.get(field_name)
+        if not isinstance(values, list):
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            safe_value = str(value or "").strip()
+            if safe_value and safe_value not in seen:
+                normalized.append(safe_value)
+                seen.add(safe_value)
+        return normalized
+
+    @staticmethod
+    def _command_monitor_server_key(payload: dict[str, Any]) -> str | None:
+        safe_value = str(payload.get("monitorServerKey") or "").strip()
+        return safe_value or None
 
     @staticmethod
     def _ok_result(logs: list[str], result: dict[str, Any]) -> dict[str, Any]:
@@ -195,23 +213,16 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_check_update(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
-        result = self.runtime.check_update()
+    def _handle_check_update(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+        result = self.runtime.check_update(
+            monitor_server_key=self._command_monitor_server_key(payload),
+            start_server_keys=self._command_server_keys(payload),
+        )
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
     def _handle_check_validate(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
         result = self.runtime.check_validate()
-        logs.append(result["message"])
-        return self._ok_result(logs, result)
-
-    def _handle_check_update_monitor(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
-        result = self.runtime.check_update_monitor(start_after_success=False)
-        logs.append(result["message"])
-        return self._ok_result(logs, result)
-
-    def _handle_check_update_start(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
-        result = self.runtime.check_update_monitor(start_after_success=True)
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
@@ -225,13 +236,21 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_monitor_check(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
-        result = self.runtime.monitor_check(start_after_success=False)
+    def _handle_monitor_check(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+        result = self.runtime.monitor_check(
+            start_after_success=False,
+            monitor_server_key=self._command_monitor_server_key(payload),
+            start_server_keys=self._command_server_keys(payload),
+        )
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_monitor_start(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
-        result = self.runtime.monitor_check(start_after_success=True)
+    def _handle_monitor_start(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+        result = self.runtime.monitor_check(
+            start_after_success=True,
+            monitor_server_key=self._command_monitor_server_key(payload),
+            start_server_keys=self._command_server_keys(payload),
+        )
         logs.append(result["message"])
         return self._ok_result(logs, result)
 

@@ -332,6 +332,28 @@ class DockerRuntime:
             "results": results,
         }
 
+    def _run_servers(self, action: str, server_keys: list[str]) -> dict[str, Any]:
+        servers = self._servers_for_keys(server_keys)
+        results = []
+        changed = 0
+
+        for server in servers:
+            self._raise_if_cancel_requested()
+            method = getattr(self, f"{action}_server")
+            result = method(server.key)
+            results.append(result)
+            if result.get("changed"):
+                changed += 1
+
+        return {
+            "scope": "servers",
+            "action": action,
+            "serverKeys": [server.key for server in servers],
+            "changed": changed,
+            "total": len(results),
+            "results": results,
+        }
+
     def _run_all(self, action: str) -> dict[str, Any]:
         results = []
         changed = 0
@@ -366,6 +388,57 @@ class DockerRuntime:
 
     def remove_all(self) -> dict[str, Any]:
         return self._run_all("remove")
+
+    def _resolve_monitor_server_key(self, monitor_server_key: str | None = None) -> str:
+        explicit_key = str(monitor_server_key or "").strip()
+        if explicit_key:
+            return explicit_key
+
+        configured_key = str(self.config.monitor_server_key or "").strip()
+        if configured_key:
+            return configured_key
+
+        if self.config.servers:
+            return self.config.servers[0].key
+
+        raise RuntimeError("No monitor server key configured")
+
+    def _default_start_server_keys(self, monitor_server_key: str) -> list[str]:
+        keys = [server.key for server in self.config.servers if server.key != monitor_server_key]
+        return keys or [server.key for server in self.config.servers]
+
+    def _launch_monitor_server(self, monitor_server_key: str) -> dict[str, Any]:
+        cleanup = self.remove_server(monitor_server_key)
+        launch = self.start_server(monitor_server_key)
+        return {
+            "monitorServerKey": monitor_server_key,
+            "cleanup": cleanup,
+            "launch": launch,
+            "message": f"Recreated monitor server {monitor_server_key}",
+        }
+
+    def start_after_monitor(
+        self,
+        *,
+        monitor_server_key: str,
+        start_server_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
+        normalized_keys = (
+            [server.key for server in self._servers_for_keys(start_server_keys)]
+            if start_server_keys
+            else self._default_start_server_keys(monitor_server_key)
+        )
+        result = self._run_servers("start", normalized_keys)
+        return {
+            **result,
+            "defaulted": not bool(start_server_keys),
+            "monitorServerKey": monitor_server_key,
+            "message": (
+                f"Started {result['total']} selected servers"
+                if start_server_keys
+                else f"Started {result['total']} servers after monitor success"
+            ),
+        }
 
     def build_summary(self) -> dict[str, Any]:
         servers = self.list_servers()
@@ -516,7 +589,7 @@ class DockerRuntime:
 
     def _run_app_update_validate(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
-        self.remove_all()
+        stop_all = self.remove_all()
         result = self._run_process(
             [
                 self.config.steamcmd_sh,
@@ -536,21 +609,60 @@ class DockerRuntime:
 
         metamod = self.ensure_metamod_path()
         return {
+            "stopAll": stop_all,
             "output": result["output"],
             "metamod": metamod,
         }
 
-    def check_update(self) -> dict[str, Any]:
+    def _run_update_pipeline(
+        self,
+        *,
+        start_after_success: bool,
+        monitor_server_key: str | None = None,
+        start_server_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         local_build = self.get_oldver()["buildId"]
         remote_build = self.get_nowver()["buildId"]
         needs_update = local_build != remote_build
+
+        if not needs_update:
+            return {
+                "currentBuildId": local_build,
+                "latestBuildId": remote_build,
+                "needsUpdate": False,
+                "updated": False,
+                "validated": False,
+                "monitor": None,
+                "message": "Already latest version, skipped validate and monitor",
+            }
+
+        validated = self.check_validate()
+        monitored = self.monitor_check(
+            start_after_success=start_after_success,
+            monitor_server_key=monitor_server_key,
+            start_server_keys=start_server_keys,
+        )
         return {
-            "currentBuildId": local_build,
+            **validated,
+            "currentBuildId": validated["currentBuildId"],
             "latestBuildId": remote_build,
-            "needsUpdate": needs_update,
-            "message": "Update available" if needs_update else "Already latest version",
+            "needsUpdate": False,
+            "monitor": monitored,
+            "message": monitored["message"],
         }
+
+    def check_update(
+        self,
+        *,
+        monitor_server_key: str | None = None,
+        start_server_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return self._run_update_pipeline(
+            start_after_success=True,
+            monitor_server_key=monitor_server_key,
+            start_server_keys=start_server_keys,
+        )
 
     def check_validate(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
@@ -572,16 +684,20 @@ class DockerRuntime:
             "update": update,
         }
 
-    def monitor_check(self, start_after_success: bool = False) -> dict[str, Any]:
+    def monitor_check(
+        self,
+        start_after_success: bool = False,
+        *,
+        monitor_server_key: str | None = None,
+        start_server_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
-        monitor_key = self.config.monitor_server_key or (self.config.servers[0].key if self.config.servers else "")
-        if not monitor_key:
-            raise RuntimeError("No monitor server key configured")
-
+        monitor_key = self._resolve_monitor_server_key(monitor_server_key)
         server = self.get_server(monitor_key)
+        launch = self._launch_monitor_server(monitor_key)
         container = self._get_container(server.container_name)
         if not container:
-            raise RuntimeError(f"Monitor container missing: {server.container_name}")
+            raise RuntimeError(f"Monitor container missing after launch: {server.container_name}")
 
         container.reload()
         base_restart_count = int(container.attrs.get("RestartCount") or container.attrs.get("State", {}).get("RestartCount") or 0)
@@ -619,12 +735,19 @@ class DockerRuntime:
                     result: dict[str, Any] = {
                         "ok": True,
                         "monitorServerKey": monitor_key,
+                        "monitorServer": self.inspect_server(monitor_key),
+                        "monitorLaunch": launch,
                         "timeline": timeline[-50:],
                         "message": f"Monitor success after {self.config.monitor_stable_seconds} stable seconds",
                     }
                     if start_after_success:
-                        result["startAll"] = self.start_all()
-                        result["message"] = f"{result['message']}, all servers started"
+                        result["startServers"] = self.start_after_monitor(
+                            monitor_server_key=monitor_key,
+                            start_server_keys=start_server_keys,
+                        )
+                        result["message"] = (
+                            f"{result['message']}, {result['startServers']['message'].lower()}"
+                        )
                     return result
             else:
                 if non_running_since <= 0:
@@ -635,15 +758,3 @@ class DockerRuntime:
 
             last_status = status
             time.sleep(max(1, self.config.monitor_poll_interval_seconds))
-
-    def check_update_monitor(self, start_after_success: bool = False) -> dict[str, Any]:
-        validated = self.check_validate()
-        if not validated.get("updated"):
-            return validated
-
-        monitored = self.monitor_check(start_after_success=start_after_success)
-        return {
-            **validated,
-            "monitor": monitored,
-            "message": monitored["message"],
-        }

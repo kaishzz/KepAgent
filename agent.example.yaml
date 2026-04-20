@@ -18,6 +18,7 @@ rcon_timeout_seconds: 5
 steamcmd_sh: "/data/steamcmd/steamcmd.sh"
 cs2_root: "/data/cs2"
 app_id: 730
+# Default fallback used when the control plane command payload does not specify monitorServerKey.
 monitor_server_key: "ks"
 monitor_poll_interval_seconds: 5
 monitor_stable_seconds: 120

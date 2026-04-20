@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.3.0"
 
 SUPPORTED_COMMANDS = (
     "agent.ping",
@@ -16,8 +16,6 @@ SUPPORTED_COMMANDS = (
     "node.rcon_command",
     "node.check_update",
     "node.check_validate",
-    "node.check_update_monitor",
-    "node.check_update_start",
     "node.get_oldver",
     "node.get_nowver",
     "node.monitor_check",
