@@ -797,6 +797,12 @@ class DockerRuntime:
         self._emit_log(
             f"Removed {stop_all['changed']} of {stop_all['total']} configured containers before validate"
         )
+        manifest_path = Path(self.config.cs2_root) / "steamapps" / f"appmanifest_{self.config.app_id}.acf"
+        if manifest_path.exists():
+            manifest_path.unlink()
+            self._emit_log(f"Deleted manifest before validate: {manifest_path}")
+        else:
+            self._emit_log(f"Manifest already missing before validate: {manifest_path}")
         self._emit_log(f"Running steamcmd app_update {self.config.app_id} validate")
         result = self._run_process(
             [
