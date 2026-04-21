@@ -128,5 +128,23 @@ class CleanupSteamappsBeforeValidateTests(unittest.TestCase):
             )
 
 
+class DefaultStartServerSelectionTests(unittest.TestCase):
+    def test_excludes_test_group_servers_from_default_start_targets(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            servers=[
+                SimpleNamespace(key="xl1", groups=["all", "xl"]),
+                SimpleNamespace(key="pt1", groups=["all", "pt"]),
+                SimpleNamespace(key="xl_test", groups=["test"]),
+                SimpleNamespace(key="pt_test", groups=["test"]),
+            ]
+        )
+
+        self.assertEqual(
+            runtime._default_start_server_keys("pt_test"),
+            ["xl1", "pt1"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -638,7 +638,19 @@ class DockerRuntime:
 
         raise RuntimeError("No monitor server key configured")
 
+    @staticmethod
+    def _is_test_server(server: ServerDefinition) -> bool:
+        return "test" in {str(group or "").strip() for group in server.groups}
+
     def _default_start_server_keys(self, monitor_server_key: str) -> list[str]:
+        keys = [
+            server.key
+            for server in self.config.servers
+            if server.key != monitor_server_key and not self._is_test_server(server)
+        ]
+        if keys:
+            return keys
+
         keys = [server.key for server in self.config.servers if server.key != monitor_server_key]
         return keys or [server.key for server in self.config.servers]
 

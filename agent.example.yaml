@@ -10,6 +10,7 @@ group_labels:
   all: "全部"
   xl: "训练服"
   pt: "跑图服"
+  test: "测试服"
 rcon_host: "127.0.0.1"
 # Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
@@ -18,7 +19,7 @@ steamcmd_sh: "/data/steamcmd/steamcmd.sh"
 cs2_root: "/data/cs2"
 app_id: 730
 # Default fallback used when the control plane command payload does not specify monitorServerKey.
-monitor_server_key: "test"
+monitor_server_key: "pt_test"
 monitor_poll_interval_seconds: 5
 monitor_stable_seconds: 120
 monitor_recover_timeout_seconds: 120
@@ -477,17 +478,17 @@ servers:
       kepcs.exec_cfg: "z_pt_6.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "test"
-    container_name: "kepcs2-pt-32010"
+  - key: "xl_test"
+    container_name: "kepcs2-xl-32010"
     image: "steamrt3:latest"
-    groups: []
+    groups: ["test"]
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 32010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_ks.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 32010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_test.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -504,6 +505,42 @@ servers:
       - host_path: "/data/cs2"
         container_path: "/cs2"
         mode: "rw"
+      - host_path: "/data/cs2/entrypoint.sh"
+        container_path: "/entrypoint.sh"
+        mode: "rw"
+    labels:
+      kepcs.mode: "xl"
+      kepcs.server_key: "xl_test"
+      kepcs.exec_cfg: "z_test.cfg"
+    restart_policy: "unless-stopped"
+
+  - key: "pt_test"
+    container_name: "kepcs2-pt-32020"
+    image: "steamrt3:latest"
+    groups: ["test"]
+    entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
+    command:
+      - "bash"
+      - "-lc"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 64 +game_type 0 +game_mode 0 +map de_dust2 -port 32020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3292908214 +exec z_test.cfg"
+    env:
+      TZ: "Asia/Shanghai"
+    ports:
+      - host_port: 32020
+        container_port: 32020
+        protocol: "tcp"
+      - host_port: 32020
+        container_port: 32020
+        protocol: "udp"
+    volumes:
+      - host_path: "/data/steamcmd"
+        container_path: "/steamcmd"
+        mode: "rw"
+      - host_path: "/data/cs2"
+        container_path: "/cs2"
+        mode: "rw"
       - host_path: "/data/cs2/game/csgo/addons/StripperCS2/maps_pt"
         container_path: "/cs2/game/csgo/addons/StripperCS2/maps"
         mode: "rw"
@@ -511,7 +548,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "test"
-      kepcs.server_key: "test"
-      kepcs.exec_cfg: "z_ks.cfg"
+      kepcs.mode: "pt"
+      kepcs.server_key: "pt_test"
+      kepcs.exec_cfg: "z_test.cfg"
     restart_policy: "unless-stopped"
