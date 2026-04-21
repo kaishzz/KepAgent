@@ -152,7 +152,17 @@ class DockerRuntime:
         cwd: str | None = None,
         log_filter: Callable[[str, str], bool] | None = None,
         stop_condition: Callable[[str, str], bool] | None = None,
+        use_pty: bool = False,
     ) -> dict[str, Any]:
+        if use_pty:
+            return self._run_process_with_pty(
+                args,
+                timeout_seconds=timeout_seconds,
+                cwd=cwd,
+                log_filter=log_filter,
+                stop_condition=stop_condition,
+            )
+
         self._raise_if_cancel_requested()
 
         process = subprocess.Popen(
@@ -263,6 +273,142 @@ class DockerRuntime:
                 self._emit_log(f"[stderr] {message}", level="error")
             else:
                 self._emit_log(message)
+
+        output = "\n".join(output_parts).strip()
+        return {
+            "ok": stopped_early or process.returncode == 0,
+            "code": 0 if stopped_early else process.returncode,
+            "output": output,
+            "stoppedEarly": stopped_early,
+        }
+
+    def _run_process_with_pty(
+        self,
+        args: list[str],
+        *,
+        timeout_seconds: int = 600,
+        cwd: str | None = None,
+        log_filter: Callable[[str, str], bool] | None = None,
+        stop_condition: Callable[[str, str], bool] | None = None,
+    ) -> dict[str, Any]:
+        import os
+        import pty
+        import select
+
+        self._raise_if_cancel_requested()
+
+        master_fd, slave_fd = pty.openpty()
+        try:
+            process = subprocess.Popen(
+                args,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                bufsize=0,
+            )
+        finally:
+            os.close(slave_fd)
+
+        started_at = time.time()
+        output_parts: list[str] = []
+        buffer = ""
+        stopped_early = False
+
+        def terminate_process() -> None:
+            if process.poll() is not None:
+                return
+
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+        def handle_message(message: str) -> bool:
+            nonlocal stopped_early
+            if not message:
+                return False
+
+            output_parts.append(message)
+            if stop_condition and stop_condition("stdout", message):
+                stopped_early = True
+                terminate_process()
+                return True
+
+            should_emit_log = log_filter("stdout", message) if log_filter else True
+            if should_emit_log:
+                self._emit_log(message)
+            return False
+
+        try:
+            while True:
+                request = self._current_cancel_request()
+                if request:
+                    if request.get("force"):
+                        process.kill()
+                    else:
+                        terminate_process()
+
+                    raise CommandCancelled(
+                        "Command force cancelled by operator"
+                        if request.get("force")
+                        else "Command cancelled by operator",
+                        force=bool(request.get("force")),
+                    )
+
+                if time.time() - started_at > timeout_seconds:
+                    process.kill()
+                    process.wait(timeout=5)
+                    raise RuntimeError(f"Process timed out after {timeout_seconds} seconds")
+
+                ready, _, _ = select.select([master_fd], [], [], 1)
+                if not ready:
+                    if process.poll() is not None:
+                        break
+                    continue
+
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError:
+                    chunk = b""
+                if not chunk:
+                    if process.poll() is not None:
+                        break
+                    continue
+
+                text = ANSI_ESCAPE_RE.sub("", chunk.decode("utf-8", errors="ignore"))
+                if not text:
+                    continue
+
+                buffer += text.replace("\r\n", "\n")
+                while True:
+                    newline_index = len(buffer)
+                    separator_length = 0
+                    for token in ("\r", "\n"):
+                        token_index = buffer.find(token)
+                        if token_index != -1 and token_index < newline_index:
+                            newline_index = token_index
+                            separator_length = len(token)
+
+                    if separator_length == 0:
+                        break
+
+                    message = buffer[:newline_index].strip()
+                    buffer = buffer[newline_index + separator_length :]
+                    if handle_message(message):
+                        break
+
+                if stopped_early:
+                    break
+
+            if buffer.strip():
+                handle_message(buffer.strip())
+        finally:
+            os.close(master_fd)
+            if process.poll() is None:
+                process.wait(timeout=5)
 
         output = "\n".join(output_parts).strip()
         return {
@@ -817,6 +963,7 @@ class DockerRuntime:
                 "+quit",
             ],
             timeout_seconds=3600,
+            use_pty=True,
         )
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_update failed")
