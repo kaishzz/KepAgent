@@ -782,80 +782,22 @@ class DockerRuntime:
 
     @staticmethod
     def _extract_remote_buildid_from_appinfo(output: str) -> str | None:
-        in_branches = False
-        in_public = False
-
-        for raw_line in str(output or "").splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            if not in_branches and '"branches"' in line:
-                in_branches = True
-                continue
-
-            if in_branches and not in_public and line == '"public"':
-                in_public = True
-                continue
-
-            if in_public and '"buildid"' in line:
-                quoted_parts = re.findall(r'"([^"]*)"', line)
-                if len(quoted_parts) >= 2 and quoted_parts[0] == "buildid":
-                    return quoted_parts[1]
-
-        return None
+        matched = re.search(
+            r'"branches"\s*:?\s*\{.*?"public"\s*:?\s*\{.*?"buildid"\s*:?\s*"([^"]+)"',
+            str(output or ""),
+            flags=re.DOTALL,
+        )
+        if not matched:
+            return None
+        return matched.group(1)
 
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
-        self._emit_log("Waiting for steamcmd to stream remote buildid from app metadata")
         started_at = time.time()
-        last_wait_log_at = started_at
-        resolved_build_id: str | None = None
-        metadata_buffer = ""
-
-        def app_info_log_filter(stream_name: str, message: str) -> bool:
-            nonlocal last_wait_log_at
-            if stream_name == "stderr":
-                return True
-
-            stripped = message.strip()
-            is_metadata_line = (
-                stripped == "{"
-                or stripped == "}"
-                or stripped.startswith('"')
-            )
-            if is_metadata_line:
-                now = time.time()
-                if now - last_wait_log_at >= 10:
-                    self._emit_log(
-                        f"steamcmd app_info_print is still streaming metadata, waited {self._format_elapsed(now - started_at)}"
-                    )
-                    last_wait_log_at = now
-                return False
-            return True
-
-        def app_info_stop_condition(stream_name: str, message: str) -> bool:
-            nonlocal resolved_build_id, metadata_buffer
-            if stream_name != "stdout" or resolved_build_id:
-                return False
-
-            stripped = message.strip()
-            if not stripped:
-                return False
-
-            metadata_buffer += f"{stripped}\n"
-            resolved_build_id = self._extract_remote_buildid_from_appinfo(metadata_buffer)
-            if resolved_build_id:
-                self._emit_log(
-                    f"Resolved remote buildid {resolved_build_id} after {self._format_elapsed(time.time() - started_at)}, stopping app_info_print early"
-                )
-                return True
-
-            return False
-
+        timeout_seconds = 120
         try:
-            result = self._run_process(
+            result = subprocess.run(
                 [
                     self.config.steamcmd_sh,
                     "+login",
@@ -864,29 +806,33 @@ class DockerRuntime:
                     str(self.config.app_id),
                     "+quit",
                 ],
-                timeout_seconds=600,
-                log_filter=app_info_log_filter,
-                stop_condition=app_info_stop_condition,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=timeout_seconds,
+                check=False,
             )
-        except RuntimeError as exc:
-            if "Process timed out after" in str(exc):
-                raise RuntimeError(
-                    f"steamcmd app_info_print timed out after 600 seconds while checking app {self.config.app_id}"
-                ) from exc
-            raise
-        if not result["ok"]:
-            raise RuntimeError(result["output"] or "steamcmd app_info_print failed")
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"steamcmd app_info_print timed out after {timeout_seconds} seconds while checking app {self.config.app_id}"
+            ) from exc
 
-        output = result["output"]
-        build_id = resolved_build_id
+        self._raise_if_cancel_requested()
+        output = ANSI_ESCAPE_RE.sub("", result.stdout or "").strip()
+        stderr_output = ANSI_ESCAPE_RE.sub("", result.stderr or "").strip()
+        if result.returncode != 0:
+            raise RuntimeError(stderr_output or output or "steamcmd app_info_print failed")
+
+        self._emit_log(
+            f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
+        )
+        build_id = self._extract_remote_buildid_from_appinfo(output)
         if not build_id:
-            self._emit_log(
-                f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
-            )
-            build_id = self._extract_remote_buildid_from_appinfo(output)
-            if not build_id:
-                raise RuntimeError("Failed to extract remote buildid")
-            self._emit_log(f"Resolved remote buildid {build_id}")
+            raise RuntimeError("Failed to extract remote buildid")
+        self._emit_log(f"Resolved remote buildid {build_id}")
         return {
             "buildId": build_id,
             "message": f"Latest buildid: {build_id}",
