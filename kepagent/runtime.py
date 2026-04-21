@@ -151,6 +151,7 @@ class DockerRuntime:
         timeout_seconds: int = 600,
         cwd: str | None = None,
         log_filter: Callable[[str, str], bool] | None = None,
+        stop_condition: Callable[[str, str], bool] | None = None,
     ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
 
@@ -167,6 +168,7 @@ class DockerRuntime:
         output_parts: list[str] = []
         event_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         stream_names: set[str] = set()
+        stopped_early = False
 
         def read_stream(stream_name: str, stream: Any) -> None:
             try:
@@ -242,6 +244,17 @@ class DockerRuntime:
                 continue
 
             output_parts.append(message)
+            if stop_condition and stop_condition(stream_name, message):
+                stopped_early = True
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                break
+
             should_emit_log = log_filter(stream_name, message) if log_filter else True
             if not should_emit_log:
                 continue
@@ -253,9 +266,10 @@ class DockerRuntime:
 
         output = "\n".join(output_parts).strip()
         return {
-            "ok": process.returncode == 0,
-            "code": process.returncode,
+            "ok": stopped_early or process.returncode == 0,
+            "code": 0 if stopped_early else process.returncode,
             "output": output,
+            "stoppedEarly": stopped_early,
         }
 
     def _server_primary_port(self, server: ServerDefinition) -> int:
@@ -623,9 +637,13 @@ class DockerRuntime:
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
-        self._emit_log("Waiting for steamcmd to finish streaming app metadata before parsing remote buildid")
+        self._emit_log("Waiting for steamcmd to stream remote buildid from app metadata")
         started_at = time.time()
         last_wait_log_at = started_at
+        resolved_build_id: str | None = None
+        vdf_path: list[str] = []
+        pending_block_key: str | None = None
+        app_id = str(self.config.app_id)
 
         def app_info_log_filter(stream_name: str, message: str) -> bool:
             nonlocal last_wait_log_at
@@ -648,6 +666,47 @@ class DockerRuntime:
                 return False
             return True
 
+        def app_info_stop_condition(stream_name: str, message: str) -> bool:
+            nonlocal pending_block_key, resolved_build_id
+            if stream_name != "stdout" or resolved_build_id:
+                return False
+
+            stripped = message.strip()
+            if not stripped:
+                return False
+
+            if stripped == "{":
+                if pending_block_key:
+                    vdf_path.append(pending_block_key)
+                    pending_block_key = None
+                return False
+
+            if stripped == "}":
+                pending_block_key = None
+                if vdf_path:
+                    vdf_path.pop()
+                return False
+
+            quoted_parts = re.findall(r'"([^"]*)"', stripped)
+            if len(quoted_parts) == 1 and stripped.startswith('"') and stripped.endswith('"'):
+                pending_block_key = quoted_parts[0]
+                return False
+
+            pending_block_key = None
+            if len(quoted_parts) < 2:
+                return False
+
+            key = quoted_parts[0]
+            value = quoted_parts[1]
+            if vdf_path == [app_id, "depots", "branches", "public"] and key == "buildid":
+                resolved_build_id = value
+                self._emit_log(
+                    f"Resolved remote buildid {value} after {self._format_elapsed(time.time() - started_at)}, stopping app_info_print early"
+                )
+                return True
+
+            return False
+
         try:
             result = self._run_process(
                 [
@@ -660,6 +719,7 @@ class DockerRuntime:
                 ],
                 timeout_seconds=600,
                 log_filter=app_info_log_filter,
+                stop_condition=app_info_stop_condition,
             )
         except RuntimeError as exc:
             if "Process timed out after" in str(exc):
@@ -670,16 +730,17 @@ class DockerRuntime:
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_info_print failed")
 
-        self._emit_log(
-            f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
-        )
         output = result["output"]
-        matched = re.search(r'"public"\s*\{.*?"buildid"\s*"(\d+)"', output, flags=re.S)
-        if not matched:
-            raise RuntimeError("Failed to extract remote buildid")
-
-        build_id = matched.group(1)
-        self._emit_log(f"Resolved remote buildid {build_id}")
+        build_id = resolved_build_id
+        if not build_id:
+            self._emit_log(
+                f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
+            )
+            matched = re.search(r'"public"\s*\{.*?"buildid"\s*"(\d+)"', output, flags=re.S)
+            if not matched:
+                raise RuntimeError("Failed to extract remote buildid")
+            build_id = matched.group(1)
+            self._emit_log(f"Resolved remote buildid {build_id}")
         return {
             "buildId": build_id,
             "message": f"Latest buildid: {build_id}",
