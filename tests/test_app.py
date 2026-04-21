@@ -114,5 +114,59 @@ class CompactFinishResultTests(unittest.TestCase):
         self.assertNotIn("results", compact["startServers"])
 
 
+class ProcessOneCommandTests(unittest.TestCase):
+    def test_finishes_successful_command_without_name_error(self) -> None:
+        finished: dict[str, object] = {}
+        appended_batches: list[list[dict[str, str]]] = []
+
+        class FakeClient:
+            def claim_command(self):
+                return {
+                    "id": "command-1",
+                    "commandType": "node.get_oldver",
+                    "payload": {},
+                }
+
+            def mark_command_started(self, _command_id: str):
+                return {"status": "RUNNING"}
+
+            def append_command_logs(self, _command_id: str, batch):
+                appended_batches.append(list(batch))
+
+            def finish_command(self, command_id: str, *, success: bool, result, **kwargs):
+                finished.update(
+                    {
+                        "command_id": command_id,
+                        "success": success,
+                        "result": result,
+                        "extra": kwargs,
+                    }
+                )
+
+        class FakeRuntime:
+            def set_cancel_reader(self, _reader):
+                return None
+
+            def set_log_emitter(self, _emitter):
+                return None
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.client = FakeClient()
+        app.runtime = FakeRuntime()
+        app.execute_command = lambda _command, logs: (
+            logs.append("Current buildid: 22880072") or {"ok": True, "result": {"message": "Current buildid: 22880072"}}
+        )
+
+        app.process_one_command()
+
+        self.assertEqual(finished["command_id"], "command-1")
+        self.assertTrue(finished["success"])
+        self.assertEqual(
+            finished["result"],
+            {"message": "Current buildid: 22880072"},
+        )
+        self.assertGreaterEqual(len(appended_batches), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

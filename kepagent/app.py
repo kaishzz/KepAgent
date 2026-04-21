@@ -466,6 +466,7 @@ class KepAgentApp:
             return
 
         command_id = str(command["id"])
+        command_type = str(command.get("commandType") or "").strip()
         started = self.client.mark_command_started(command_id)
         if str((started or {}).get("status") or "").strip().upper() == "CANCELLED":
             LOGGER.info("Command %s was cancelled before execution", command_id)
