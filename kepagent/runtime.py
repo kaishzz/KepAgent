@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import queue
 import subprocess
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -30,6 +32,7 @@ class DockerRuntime:
         self._servers = {server.key: server for server in config.servers}
         self._groups = self._build_groups(config.servers)
         self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
+        self._log_emitter: Callable[[str, str], None] | None = None
 
     @staticmethod
     def _build_groups(servers: list[ServerDefinition]) -> dict[str, list[ServerDefinition]]:
@@ -99,6 +102,15 @@ class DockerRuntime:
     def set_cancel_reader(self, reader: Callable[[], dict[str, Any] | None] | None) -> None:
         self._cancel_reader = reader
 
+    def set_log_emitter(self, emitter: Callable[[str, str], None] | None) -> None:
+        self._log_emitter = emitter
+
+    def _emit_log(self, message: str, *, level: str = "info") -> None:
+        if self._log_emitter is None:
+            return
+
+        self._log_emitter(str(message or ""), level=str(level or "info"))
+
     def _current_cancel_request(self) -> dict[str, Any] | None:
         if self._cancel_reader is None:
             return None
@@ -133,11 +145,45 @@ class DockerRuntime:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,
         )
 
         started_at = time.time()
+        output_parts: list[str] = []
+        event_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
+        stream_names: set[str] = set()
 
-        while True:
+        def read_stream(stream_name: str, stream: Any) -> None:
+            try:
+                while True:
+                    chunk = stream.readline()
+                    if chunk == "":
+                        break
+                    event_queue.put((stream_name, chunk))
+            finally:
+                try:
+                    stream.close()
+                finally:
+                    event_queue.put((stream_name, None))
+
+        if process.stdout is not None:
+            stream_names.add("stdout")
+            threading.Thread(
+                target=read_stream,
+                args=("stdout", process.stdout),
+                daemon=True,
+            ).start()
+
+        if process.stderr is not None:
+            stream_names.add("stderr")
+            threading.Thread(
+                target=read_stream,
+                args=("stderr", process.stderr),
+                daemon=True,
+            ).start()
+
+        closed_streams: set[str] = set()
+        while len(closed_streams) < len(stream_names) or process.poll() is None:
             request = self._current_cancel_request()
             if request:
                 if request.get("force"):
@@ -164,20 +210,29 @@ class DockerRuntime:
 
             if time.time() - started_at > timeout_seconds:
                 process.kill()
-                process.communicate()
+                process.wait(timeout=5)
                 raise RuntimeError(f"Process timed out after {timeout_seconds} seconds")
 
             try:
-                stdout, stderr = process.communicate(timeout=1)
-                break
-            except subprocess.TimeoutExpired:
+                stream_name, chunk = event_queue.get(timeout=1)
+            except queue.Empty:
                 continue
 
-        output = "\n".join(
-            part.strip()
-            for part in [stdout, stderr]
-            if str(part or "").strip()
-        ).strip()
+            if chunk is None:
+                closed_streams.add(stream_name)
+                continue
+
+            message = str(chunk or "").rstrip("\r\n")
+            if not message:
+                continue
+
+            output_parts.append(message)
+            if stream_name == "stderr":
+                self._emit_log(f"[stderr] {message}", level="error")
+            else:
+                self._emit_log(message)
+
+        output = "\n".join(output_parts).strip()
         return {
             "ok": process.returncode == 0,
             "code": process.returncode,
@@ -540,6 +595,7 @@ class DockerRuntime:
             raise RuntimeError("Failed to extract local buildid")
 
         build_id = matched.group(1)
+        self._emit_log(f"Read local manifest buildid {build_id}")
         return {
             "buildId": build_id,
             "message": f"Current buildid: {build_id}",
@@ -547,6 +603,7 @@ class DockerRuntime:
 
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
+        self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
         result = self._run_process(
             [
                 self.config.steamcmd_sh,
@@ -567,6 +624,7 @@ class DockerRuntime:
             raise RuntimeError("Failed to extract remote buildid")
 
         build_id = matched.group(1)
+        self._emit_log(f"Resolved remote buildid {build_id}")
         return {
             "buildId": build_id,
             "message": f"Latest buildid: {build_id}",
@@ -609,14 +667,21 @@ class DockerRuntime:
         content = target.read_text(encoding="utf-8", errors="ignore")
         updated, changed = self._insert_metamod_search_path(content)
         if not changed:
+            self._emit_log("Metamod search path already exists in gameinfo.gi")
             return {"changed": False, "message": "Metamod path already exists"}
 
         target.write_text(updated, encoding="utf-8")
+        self._emit_log("Inserted Metamod search path into gameinfo.gi")
         return {"changed": True, "message": "Metamod path inserted"}
 
     def _run_app_update_validate(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
+        self._emit_log("Removing configured containers before steamcmd validate")
         stop_all = self.remove_all()
+        self._emit_log(
+            f"Removed {stop_all['changed']} of {stop_all['total']} configured containers before validate"
+        )
+        self._emit_log(f"Running steamcmd app_update {self.config.app_id} validate")
         result = self._run_process(
             [
                 self.config.steamcmd_sh,
@@ -634,6 +699,7 @@ class DockerRuntime:
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_update failed")
 
+        self._emit_log("steamcmd app_update validate completed successfully")
         metamod = self.ensure_metamod_path()
         return {
             "stopAll": stop_all,
@@ -649,11 +715,15 @@ class DockerRuntime:
         start_server_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
+        self._emit_log("Checking local buildid")
         local_build = self.get_oldver()["buildId"]
+        self._emit_log("Checking latest remote buildid")
         remote_build = self.get_nowver()["buildId"]
         needs_update = local_build != remote_build
+        self._emit_log(f"Compared buildid local={local_build} remote={remote_build}")
 
         if not needs_update:
+            self._emit_log("No update detected, skipped validate and monitor")
             return {
                 "currentBuildId": local_build,
                 "latestBuildId": remote_build,
@@ -664,7 +734,9 @@ class DockerRuntime:
                 "message": "Already latest version, skipped validate and monitor",
             }
 
+        self._emit_log("Update detected, starting validate pipeline")
         validated = self.check_validate()
+        self._emit_log("Validate completed, starting monitor check")
         monitored = self.monitor_check(
             start_after_success=start_after_success,
             monitor_server_key=monitor_server_key,
@@ -721,6 +793,7 @@ class DockerRuntime:
         self._raise_if_cancel_requested()
         monitor_key = self._resolve_monitor_server_key(monitor_server_key)
         server = self.get_server(monitor_key)
+        self._emit_log(f"Launching monitor server {monitor_key}")
         launch = self._launch_monitor_server(monitor_key)
         container = self._get_container(server.container_name)
         if not container:
@@ -731,6 +804,7 @@ class DockerRuntime:
         running_since = 0.0
         non_running_since = 0.0
         last_status = ""
+        last_restart_count: int | None = None
         timeline: list[dict[str, Any]] = []
 
         while True:
@@ -747,6 +821,9 @@ class DockerRuntime:
             now = time.time()
 
             timeline.append({"status": status, "restartCount": restart_count, "timestamp": int(now)})
+            if status != last_status or restart_count != last_restart_count:
+                self._emit_log(f"Monitor {monitor_key}: status={status}, restartCount={restart_count}")
+                last_restart_count = restart_count
 
             if delta >= self.config.monitor_restart_threshold:
                 self.remove_server(monitor_key)
@@ -758,6 +835,9 @@ class DockerRuntime:
                     non_running_since = 0.0
 
                 if now - running_since >= self.config.monitor_stable_seconds:
+                    self._emit_log(
+                        f"Monitor {monitor_key} stayed running for {self.config.monitor_stable_seconds} seconds"
+                    )
                     container.stop(timeout=10)
                     result: dict[str, Any] = {
                         "ok": True,
@@ -768,10 +848,12 @@ class DockerRuntime:
                         "message": f"Monitor success after {self.config.monitor_stable_seconds} stable seconds",
                     }
                     if start_after_success:
+                        self._emit_log("Monitor passed, starting selected servers")
                         result["startServers"] = self.start_after_monitor(
                             monitor_server_key=monitor_key,
                             start_server_keys=start_server_keys,
                         )
+                        self._emit_log(result["startServers"]["message"])
                         result["message"] = (
                             f"{result['message']}, {result['startServers']['message'].lower()}"
                         )

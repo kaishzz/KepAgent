@@ -5,7 +5,7 @@ import logging
 import platform
 import socket
 import time
-from typing import Any
+from typing import Any, Callable
 
 from .api import ControlPlaneClient
 from .config import AgentConfig, load_config
@@ -13,6 +13,51 @@ from .constants import AGENT_VERSION, SUPPORTED_COMMANDS
 from .runtime import CommandCancelled, DockerRuntime
 
 LOGGER = logging.getLogger("kepagent")
+
+
+class LiveCommandLogger:
+    def __init__(
+        self,
+        emitter: Callable[[list[dict[str, str]]], None],
+        *,
+        batch_size: int = 10,
+        flush_interval_seconds: float = 0.5,
+    ) -> None:
+        self._emitter = emitter
+        self._batch_size = max(1, batch_size)
+        self._flush_interval_seconds = max(0.0, flush_interval_seconds)
+        self._messages: list[str] = []
+        self._buffer: list[dict[str, str]] = []
+        self._last_flush_at = 0.0
+
+    def append(self, message: str) -> None:
+        self.emit(message)
+
+    def emit(self, message: str, *, level: str = "info") -> None:
+        safe_message = str(message or "").strip()
+        safe_level = str(level or "info").strip() or "info"
+        if not safe_message:
+            return
+
+        self._messages.append(safe_message)
+        self._buffer.append({"level": safe_level[:16], "message": safe_message})
+        now = time.time()
+        if len(self._buffer) >= self._batch_size or now - self._last_flush_at >= self._flush_interval_seconds:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self._buffer:
+            return
+
+        while self._buffer:
+            batch = self._buffer[:200]
+            self._emitter(batch)
+            self._buffer = self._buffer[200:]
+
+        self._last_flush_at = time.time()
+
+    def messages(self) -> list[str]:
+        return list(self._messages)
 
 
 class KepAgentApp:
@@ -135,14 +180,14 @@ class KepAgentApp:
         return safe_value or None
 
     @staticmethod
-    def _ok_result(logs: list[str], result: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "logs": logs, "result": result}
+    def _ok_result(logs: LiveCommandLogger, result: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True, "logs": logs.messages(), "result": result}
 
-    def _handle_ping(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_ping(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         logs.append("Ping command completed")
         return self._ok_result(logs, {"pong": True})
 
-    def _handle_list_servers(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_list_servers(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         logs.append("Collected docker server list")
         return self._ok_result(
             logs,
@@ -152,47 +197,47 @@ class KepAgentApp:
             },
         )
 
-    def _handle_start_server(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_start_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.start_server(self._command_key(payload))
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_stop_server(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_stop_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.stop_server(self._command_key(payload))
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_restart_server(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_restart_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.restart_server(self._command_key(payload))
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_remove_server(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_remove_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.remove_server(self._command_key(payload))
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_start_group(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_start_group(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.start_group(self._command_group(payload))
         logs.append(f"Started group {result['group']}")
         return self._ok_result(logs, result)
 
-    def _handle_stop_group(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_stop_group(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.stop_group(self._command_group(payload))
         logs.append(f"Force removed group {result['group']}")
         return self._ok_result(logs, result)
 
-    def _handle_restart_group(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_restart_group(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.restart_group(self._command_group(payload))
         logs.append(f"Restarted group {result['group']}")
         return self._ok_result(logs, result)
 
-    def _handle_kill_all(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_kill_all(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.remove_all()
         logs.append(f"Removed {result['total']} configured containers")
         return self._ok_result(logs, result)
 
-    def _handle_rcon_command(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_rcon_command(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         group = str(payload.get("group") or "ALL").strip() or "ALL"
         command = str(payload.get("command") or "").strip()
         server_keys = [
@@ -213,7 +258,7 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_check_update(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_check_update(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.check_update(
             monitor_server_key=self._command_monitor_server_key(payload),
             start_server_keys=self._command_server_keys(payload),
@@ -221,22 +266,22 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_check_validate(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_check_validate(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.check_validate()
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_get_oldver(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_get_oldver(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.get_oldver()
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_get_nowver(self, _payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_get_nowver(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.get_nowver()
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_monitor_check(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_monitor_check(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.monitor_check(
             start_after_success=False,
             monitor_server_key=self._command_monitor_server_key(payload),
@@ -245,7 +290,7 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_monitor_start(self, payload: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+    def _handle_monitor_start(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.monitor_check(
             start_after_success=True,
             monitor_server_key=self._command_monitor_server_key(payload),
@@ -254,12 +299,13 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def execute_command(self, command: dict[str, Any]) -> dict[str, Any]:
+    def execute_command(self, command: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         command_type = str(command.get("commandType") or "").strip()
         payload = command.get("payload") or {}
-        logs: list[str] = [f"Executing command: {command_type}"]
+        logs.append(f"Executing command: {command_type}")
         handler = self.command_handlers.get(command_type)
         if handler is not None:
+            self.runtime.set_log_emitter(logs.emit)
             return handler(payload, logs)
 
         raise RuntimeError(f"Unsupported command type: {command_type}")
@@ -276,9 +322,10 @@ class KepAgentApp:
             return
 
         self.runtime.set_cancel_reader(lambda: self._read_cancel_request(command_id))
+        logs = LiveCommandLogger(lambda batch: self.client.append_command_logs(command_id, batch))
         try:
-            execution = self.execute_command(command)
-            self.emit_logs(command_id, execution.get("logs", []))
+            execution = self.execute_command(command, logs)
+            logs.flush()
             self.client.finish_command(
                 command_id,
                 success=bool(execution.get("ok")),
@@ -286,7 +333,8 @@ class KepAgentApp:
             )
         except CommandCancelled as exc:
             LOGGER.warning("Command cancelled: %s", exc)
-            self.emit_logs(command_id, [str(exc)])
+            logs.emit(str(exc), level="warning")
+            logs.flush()
             self.client.finish_command(
                 command_id,
                 success=False,
@@ -300,13 +348,15 @@ class KepAgentApp:
             )
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Command execution failed")
-            self.emit_logs(command_id, [f"Command failed: {exc}"])
+            logs.emit(f"Command failed: {exc}", level="error")
+            logs.flush()
             self.client.finish_command(
                 command_id,
                 success=False,
                 error_message=str(exc),
             )
         finally:
+            self.runtime.set_log_emitter(None)
             self.runtime.set_cancel_reader(None)
 
     def run_forever(self) -> int:
