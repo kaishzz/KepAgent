@@ -780,6 +780,31 @@ class DockerRuntime:
             "message": f"Current buildid: {build_id}",
         }
 
+    @staticmethod
+    def _extract_remote_buildid_from_appinfo(output: str) -> str | None:
+        in_branches = False
+        in_public = False
+
+        for raw_line in str(output or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if not in_branches and '"branches"' in line:
+                in_branches = True
+                continue
+
+            if in_branches and not in_public and line == '"public"':
+                in_public = True
+                continue
+
+            if in_public and '"buildid"' in line:
+                quoted_parts = re.findall(r'"([^"]*)"', line)
+                if len(quoted_parts) >= 2 and quoted_parts[0] == "buildid":
+                    return quoted_parts[1]
+
+        return None
+
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
@@ -787,9 +812,7 @@ class DockerRuntime:
         started_at = time.time()
         last_wait_log_at = started_at
         resolved_build_id: str | None = None
-        vdf_path: list[str] = []
-        pending_block_key: str | None = None
-        app_id = str(self.config.app_id)
+        metadata_buffer = ""
 
         def app_info_log_filter(stream_name: str, message: str) -> bool:
             nonlocal last_wait_log_at
@@ -813,7 +836,7 @@ class DockerRuntime:
             return True
 
         def app_info_stop_condition(stream_name: str, message: str) -> bool:
-            nonlocal pending_block_key, resolved_build_id
+            nonlocal resolved_build_id, metadata_buffer
             if stream_name != "stdout" or resolved_build_id:
                 return False
 
@@ -821,33 +844,11 @@ class DockerRuntime:
             if not stripped:
                 return False
 
-            if stripped == "{":
-                if pending_block_key:
-                    vdf_path.append(pending_block_key)
-                    pending_block_key = None
-                return False
-
-            if stripped == "}":
-                pending_block_key = None
-                if vdf_path:
-                    vdf_path.pop()
-                return False
-
-            quoted_parts = re.findall(r'"([^"]*)"', stripped)
-            if len(quoted_parts) == 1 and stripped.startswith('"') and stripped.endswith('"'):
-                pending_block_key = quoted_parts[0]
-                return False
-
-            pending_block_key = None
-            if len(quoted_parts) < 2:
-                return False
-
-            key = quoted_parts[0]
-            value = quoted_parts[1]
-            if vdf_path == [app_id, "depots", "branches", "public"] and key == "buildid":
-                resolved_build_id = value
+            metadata_buffer += f"{stripped}\n"
+            resolved_build_id = self._extract_remote_buildid_from_appinfo(metadata_buffer)
+            if resolved_build_id:
                 self._emit_log(
-                    f"Resolved remote buildid {value} after {self._format_elapsed(time.time() - started_at)}, stopping app_info_print early"
+                    f"Resolved remote buildid {resolved_build_id} after {self._format_elapsed(time.time() - started_at)}, stopping app_info_print early"
                 )
                 return True
 
@@ -882,10 +883,9 @@ class DockerRuntime:
             self._emit_log(
                 f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
             )
-            matched = re.search(r'"public"\s*\{.*?"buildid"\s*"(\d+)"', output, flags=re.S)
-            if not matched:
+            build_id = self._extract_remote_buildid_from_appinfo(output)
+            if not build_id:
                 raise RuntimeError("Failed to extract remote buildid")
-            build_id = matched.group(1)
             self._emit_log(f"Resolved remote buildid {build_id}")
         return {
             "buildId": build_id,
