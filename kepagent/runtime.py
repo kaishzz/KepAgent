@@ -15,6 +15,9 @@ from docker.errors import NotFound
 from .config import AgentConfig, PortBinding, ServerDefinition, VolumeBinding
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
 class CommandCancelled(RuntimeError):
     def __init__(self, message: str, *, force: bool = False) -> None:
         super().__init__(message)
@@ -136,6 +139,7 @@ class DockerRuntime:
         *,
         timeout_seconds: int = 600,
         cwd: str | None = None,
+        log_filter: Callable[[str, str], bool] | None = None,
     ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
 
@@ -222,11 +226,15 @@ class DockerRuntime:
                 closed_streams.add(stream_name)
                 continue
 
-            message = str(chunk or "").rstrip("\r\n")
+            message = ANSI_ESCAPE_RE.sub("", str(chunk or "")).rstrip("\r\n")
             if not message:
                 continue
 
             output_parts.append(message)
+            should_emit_log = log_filter(stream_name, message) if log_filter else True
+            if not should_emit_log:
+                continue
+
             if stream_name == "stderr":
                 self._emit_log(f"[stderr] {message}", level="error")
             else:
@@ -604,17 +612,37 @@ class DockerRuntime:
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
-        result = self._run_process(
-            [
-                self.config.steamcmd_sh,
-                "+login",
-                "anonymous",
-                "+app_info_print",
-                str(self.config.app_id),
-                "+quit",
-            ],
-            timeout_seconds=180,
-        )
+
+        def app_info_log_filter(stream_name: str, message: str) -> bool:
+            if stream_name == "stderr":
+                return True
+
+            stripped = message.strip()
+            return not (
+                stripped == "{"
+                or stripped == "}"
+                or stripped.startswith('"')
+            )
+
+        try:
+            result = self._run_process(
+                [
+                    self.config.steamcmd_sh,
+                    "+login",
+                    "anonymous",
+                    "+app_info_print",
+                    str(self.config.app_id),
+                    "+quit",
+                ],
+                timeout_seconds=600,
+                log_filter=app_info_log_filter,
+            )
+        except RuntimeError as exc:
+            if "Process timed out after" in str(exc):
+                raise RuntimeError(
+                    f"steamcmd app_info_print timed out after 600 seconds while checking app {self.config.app_id}"
+                ) from exc
+            raise
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_info_print failed")
 
