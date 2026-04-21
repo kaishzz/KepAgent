@@ -789,6 +789,37 @@ class DockerRuntime:
             "message": f"Current buildid: {build_id}",
         }
 
+    def _get_oldver_for_validate(self) -> str | None:
+        manifest_path = Path(self.config.cs2_root) / "steamapps" / f"appmanifest_{self.config.app_id}.acf"
+        if not manifest_path.exists():
+            self._emit_log(f"没有 manifest: {manifest_path}")
+            return None
+        return self.get_oldver()["buildId"]
+
+    def _run_check_validate(self, *, before_build: str | None = None, before_build_known: bool = False) -> dict[str, Any]:
+        self._raise_if_cancel_requested()
+        if not before_build_known:
+            before_build = self._get_oldver_for_validate()
+        update = self._run_app_update_validate()
+        latest = self._get_oldver_for_validate()
+        return {
+            "validated": True,
+            "updated": before_build is not None and latest is not None and before_build != latest,
+            "previousBuildId": before_build,
+            "currentBuildId": latest,
+            "latestBuildId": latest,
+            "needsUpdate": False,
+            "message": (
+                "Validated, but current buildid is unavailable"
+                if latest is None
+                else
+                f"Validated and updated to buildid {latest}"
+                if before_build is not None and before_build != latest
+                else f"Validated current buildid {latest}"
+            ),
+            "update": update,
+        }
+
     @staticmethod
     def _extract_remote_buildid_from_appinfo(output: str) -> str | None:
         matched = re.search(
@@ -960,7 +991,22 @@ class DockerRuntime:
     ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log("Checking local buildid")
-        local_build = self.get_oldver()["buildId"]
+        local_build = self._get_oldver_for_validate()
+        if local_build is None:
+            self._emit_log("没有 manifest，直接进入 validate 流程")
+            validated = self._run_check_validate(before_build=None, before_build_known=True)
+            self._emit_log("Validate completed, starting monitor check")
+            monitored = self.monitor_check(
+                start_after_success=start_after_success,
+                monitor_server_key=monitor_server_key,
+                start_server_keys=start_server_keys,
+            )
+            return {
+                **validated,
+                "monitor": monitored,
+                "message": monitored["message"],
+            }
+
         self._emit_log("Checking latest remote buildid")
         remote_build = self.get_nowver()["buildId"]
         needs_update = local_build != remote_build
@@ -1010,24 +1056,7 @@ class DockerRuntime:
         )
 
     def check_validate(self) -> dict[str, Any]:
-        self._raise_if_cancel_requested()
-        before_build = self.get_oldver()["buildId"]
-        update = self._run_app_update_validate()
-        latest = self.get_oldver()["buildId"]
-        return {
-            "validated": True,
-            "updated": before_build != latest,
-            "previousBuildId": before_build,
-            "currentBuildId": latest,
-            "latestBuildId": latest,
-            "needsUpdate": False,
-            "message": (
-                f"Validated and updated to buildid {latest}"
-                if before_build != latest
-                else f"Validated current buildid {latest}"
-            ),
-            "update": update,
-        }
+        return self._run_check_validate()
 
     def monitor_check(
         self,

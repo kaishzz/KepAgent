@@ -128,6 +128,90 @@ class CleanupSteamappsBeforeValidateTests(unittest.TestCase):
             )
 
 
+class CheckValidateTests(unittest.TestCase):
+    def test_continues_when_manifest_is_missing_before_validate(self) -> None:
+        logs: list[tuple[str, str]] = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            steamapps_path = Path(tmpdir) / "steamapps"
+            steamapps_path.mkdir()
+            manifest_path = steamapps_path / "appmanifest_730.acf"
+
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime.config = SimpleNamespace(cs2_root=tmpdir, app_id=730)
+            runtime._log_emitter = lambda message, level="info": logs.append((level, message))
+            runtime._raise_if_cancel_requested = lambda: None
+
+            def fake_run_app_update_validate() -> dict[str, object]:
+                logs.append(("info", "validate pipeline continued"))
+                manifest_path.write_text('"buildid" "42"\n', encoding="utf-8")
+                return {
+                    "stopAll": {"changed": 0, "total": 0},
+                    "output": "",
+                    "metamod": {"changed": False, "message": "Metamod path already exists"},
+                }
+
+            runtime._run_app_update_validate = fake_run_app_update_validate
+
+            result = runtime.check_validate()
+
+            self.assertTrue(result["validated"])
+            self.assertFalse(result["updated"])
+            self.assertIsNone(result["previousBuildId"])
+            self.assertEqual(result["currentBuildId"], "42")
+            self.assertEqual(result["latestBuildId"], "42")
+            self.assertEqual(result["message"], "Validated current buildid 42")
+            self.assertIn(
+                ("info", f"没有 manifest: {manifest_path}"),
+                logs,
+            )
+            self.assertIn(("info", "validate pipeline continued"), logs)
+
+
+class CheckUpdateTests(unittest.TestCase):
+    def test_enters_validate_directly_when_manifest_is_missing(self) -> None:
+        logs: list[tuple[str, str]] = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            steamapps_path = Path(tmpdir) / "steamapps"
+            steamapps_path.mkdir()
+            manifest_path = steamapps_path / "appmanifest_730.acf"
+
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime.config = SimpleNamespace(cs2_root=tmpdir, app_id=730)
+            runtime._log_emitter = lambda message, level="info": logs.append((level, message))
+            runtime._raise_if_cancel_requested = lambda: None
+            runtime.get_nowver = lambda: (_ for _ in ()).throw(AssertionError("get_nowver should not be called"))
+
+            def fake_run_app_update_validate() -> dict[str, object]:
+                logs.append(("info", "validate pipeline continued"))
+                manifest_path.write_text('"buildid" "42"\n', encoding="utf-8")
+                return {
+                    "stopAll": {"changed": 0, "total": 0},
+                    "output": "",
+                    "metamod": {"changed": False, "message": "Metamod path already exists"},
+                }
+
+            runtime._run_app_update_validate = fake_run_app_update_validate
+            runtime.monitor_check = lambda **kwargs: {"ok": True, "message": "Monitor success"}
+
+            result = runtime.check_update()
+
+            self.assertTrue(result["validated"])
+            self.assertFalse(result["updated"])
+            self.assertIsNone(result["previousBuildId"])
+            self.assertEqual(result["currentBuildId"], "42")
+            self.assertEqual(result["latestBuildId"], "42")
+            self.assertEqual(result["message"], "Monitor success")
+            self.assertEqual(result["monitor"]["message"], "Monitor success")
+            self.assertIn(
+                ("info", f"没有 manifest: {manifest_path}"),
+                logs,
+            )
+            self.assertIn(("info", "没有 manifest，直接进入 validate 流程"), logs)
+            self.assertIn(("info", "validate pipeline continued"), logs)
+
+
 class DefaultStartServerSelectionTests(unittest.TestCase):
     def test_uses_start_after_monitor_flag_for_default_start_targets(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)
