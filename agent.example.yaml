@@ -10,7 +10,6 @@ group_labels:
   all: "全部"
   xl: "训练服"
   pt: "跑图服"
-  test: "测试服"
 rcon_host: "127.0.0.1"
 # Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
@@ -481,7 +480,7 @@ servers:
   - key: "test"
     container_name: "kepcs2-pt-32010"
     image: "steamrt3:latest"
-    groups: ["all", "test"]
+    groups: []
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
