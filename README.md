@@ -1,4 +1,4 @@
-# KepAgent 0.3.0
+# KepAgent 0.4.0
 
 KepAgent 是部署在 Linux 节点上的执行端 Agent，负责连接 `KepCs` 控制平面、上报节点心跳，并执行 Docker、RCON、版本维护与监控类命令。
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0"
 
 SUPPORTED_COMMANDS = (
     "agent.ping",

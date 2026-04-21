@@ -42,8 +42,8 @@ class CompactFinishResultTests(unittest.TestCase):
                 "metamod": {"changed": True, "message": "Metamod path inserted"},
             },
             "monitorServer": {
-                "key": "test",
-                "containerName": "kepcs2-pt-32010",
+                "key": "ze_xl_test",
+                "containerName": "kepcs-ze-xl-test-32010",
                 "state": "running",
                 "status": "running",
                 "primaryPort": 32010,
@@ -51,8 +51,8 @@ class CompactFinishResultTests(unittest.TestCase):
                 "id": "very-long-id",
             },
             "monitorLaunch": {
-                "monitorServerKey": "test",
-                "message": "Recreated monitor server test",
+                "monitorServerKey": "ze_xl_test",
+                "message": "Recreated monitor server ze_xl_test",
                 "cleanup": {
                     "action": "remove",
                     "changed": 1,
@@ -63,8 +63,8 @@ class CompactFinishResultTests(unittest.TestCase):
                     "changed": True,
                     "message": "started",
                     "server": {
-                        "key": "test",
-                        "containerName": "kepcs2-pt-32010",
+                        "key": "ze_xl_test",
+                        "containerName": "kepcs-ze-xl-test-32010",
                         "state": "running",
                         "status": "running",
                         "primaryPort": 32010,
@@ -78,14 +78,22 @@ class CompactFinishResultTests(unittest.TestCase):
                 "action": "start",
                 "changed": 12,
                 "total": 12,
-                "serverKeys": [f"pt{index}" for index in range(1, 13)],
+                "serverKeys": [f"ze_xl_{index}" for index in range(1, 7)] + [f"ze_pt_{index}" for index in range(1, 7)],
                 "results": [
                     {
                         "changed": True,
                         "message": f"server {index} started",
                         "server": {
-                            "key": f"pt{index}",
-                            "containerName": f"kepcs2-pt-{index}",
+                            "key": (
+                                f"ze_xl_{index}"
+                                if index <= 6
+                                else f"ze_pt_{index - 6}"
+                            ),
+                            "containerName": (
+                                f"kepcs-ze-xl-{28000 + index * 10}"
+                                if index <= 6
+                                else f"kepcs-ze-pt-{29000 + (index - 6) * 10}"
+                            ),
                         },
                     }
                     for index in range(1, 13)

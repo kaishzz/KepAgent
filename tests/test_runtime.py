@@ -129,20 +129,20 @@ class CleanupSteamappsBeforeValidateTests(unittest.TestCase):
 
 
 class DefaultStartServerSelectionTests(unittest.TestCase):
-    def test_excludes_test_group_servers_from_default_start_targets(self) -> None:
+    def test_uses_start_after_monitor_flag_for_default_start_targets(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime.config = SimpleNamespace(
             servers=[
-                SimpleNamespace(key="xl1", groups=["all", "xl"]),
-                SimpleNamespace(key="pt1", groups=["all", "pt"]),
-                SimpleNamespace(key="xl_test", groups=["test"]),
-                SimpleNamespace(key="pt_test", groups=["test"]),
+                SimpleNamespace(key="ze_xl_1", groups=["all", "ze_xl"], start_after_monitor=True),
+                SimpleNamespace(key="ze_pt_1", groups=["all", "ze_pt"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_test", groups=["test"], start_after_monitor=False),
+                SimpleNamespace(key="ze_pt_test", groups=["test"], start_after_monitor=False),
             ]
         )
 
         self.assertEqual(
-            runtime._default_start_server_keys("pt_test"),
-            ["xl1", "pt1"],
+            runtime._default_start_server_keys("ze_pt_test"),
+            ["ze_xl_1", "ze_pt_1"],
         )
 
 

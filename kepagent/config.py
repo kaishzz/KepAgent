@@ -28,6 +28,7 @@ class ServerDefinition(BaseModel):
     container_name: str
     image: str
     groups: list[str] = Field(default_factory=list)
+    start_after_monitor: bool = True
     entrypoint: list[str] | None = None
     command: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
@@ -50,6 +51,7 @@ class AgentConfig(BaseModel):
     request_timeout_seconds: int = 15
     docker_base_url: str | None = None
     group_labels: dict[str, str] = Field(default_factory=dict)
+    group_order: list[str] = Field(default_factory=list)
     rcon_host: str = "127.0.0.1"
     rcon_password: str = ""
     rcon_timeout_seconds: int = 5

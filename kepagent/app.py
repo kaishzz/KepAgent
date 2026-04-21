@@ -116,6 +116,7 @@ class KepAgentApp:
                 "machine": platform.machine(),
                 "node": platform.node(),
                 "groupLabels": self.config.group_labels,
+                "groupOrder": self.config.group_order,
             },
         }
 
