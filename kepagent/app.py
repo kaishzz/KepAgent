@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import platform
 import socket
@@ -13,6 +14,10 @@ from .constants import AGENT_VERSION, SUPPORTED_COMMANDS
 from .runtime import CommandCancelled, DockerRuntime
 
 LOGGER = logging.getLogger("kepagent")
+MAX_FINISH_RESULT_BYTES = 8 * 1024
+MAX_FINISH_BATCH_MESSAGES = 12
+MAX_FINISH_TIMELINE_ENTRIES = 10
+MAX_FINISH_TEXT_LENGTH = 300
 
 
 class LiveCommandLogger:
@@ -183,6 +188,150 @@ class KepAgentApp:
     def _ok_result(logs: LiveCommandLogger, result: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "logs": logs.messages(), "result": result}
 
+    @staticmethod
+    def _truncate_text(value: Any, limit: int = MAX_FINISH_TEXT_LENGTH) -> str:
+        text = str(value or "").strip()
+        if len(text) <= limit:
+            return text
+        return f"{text[: max(0, limit - 15)]}... (truncated)"
+
+    @classmethod
+    def _compact_server_snapshot(cls, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        return {
+            key: payload.get(key)
+            for key in ("key", "containerName", "state", "status", "primaryPort", "restartCount")
+            if key in payload
+        }
+
+    @classmethod
+    def _compact_server_batch(cls, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        compact = {
+            key: payload.get(key)
+            for key in ("scope", "group", "action", "changed", "total", "serverKeys", "defaulted", "monitorServerKey", "message")
+            if key in payload
+        }
+        results = payload.get("results")
+        if isinstance(results, list):
+            messages = [
+                cls._truncate_text(item.get("message"))
+                for item in results
+                if isinstance(item, dict) and str(item.get("message") or "").strip()
+            ]
+            if messages:
+                compact["messages"] = messages[:MAX_FINISH_BATCH_MESSAGES]
+            if len(results) > MAX_FINISH_BATCH_MESSAGES:
+                compact["truncatedResults"] = len(results) - MAX_FINISH_BATCH_MESSAGES
+        return compact
+
+    @classmethod
+    def _compact_monitor_launch(cls, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        compact = {
+            key: payload.get(key)
+            for key in ("monitorServerKey", "message")
+            if key in payload
+        }
+        cleanup = cls._compact_server_batch(payload.get("cleanup"))
+        if cleanup:
+            compact["cleanup"] = cleanup
+
+        launch = payload.get("launch")
+        if isinstance(launch, dict):
+            compact["launch"] = {
+                key: launch.get(key)
+                for key in ("changed", "message")
+                if key in launch
+            }
+            server = cls._compact_server_snapshot(launch.get("server"))
+            if server:
+                compact["launch"]["server"] = server
+        return compact
+
+    @classmethod
+    def _compact_update_result(cls, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        compact = {
+            key: payload.get(key)
+            for key in ("stopAll", "metamod")
+            if key in payload
+        }
+        stop_all = cls._compact_server_batch(payload.get("stopAll"))
+        if stop_all:
+            compact["stopAll"] = stop_all
+
+        metamod = payload.get("metamod")
+        if isinstance(metamod, dict):
+            compact["metamod"] = {
+                key: metamod.get(key)
+                for key in ("changed", "message")
+                if key in metamod
+            }
+
+        output = str(payload.get("output") or "").strip()
+        if output:
+            compact["outputLineCount"] = len(output.splitlines())
+        return compact
+
+    @classmethod
+    def _compact_finish_result(cls, command_type: str, result: Any) -> Any:
+        if not isinstance(result, dict):
+            return result
+
+        compact = dict(result)
+        if "update" in compact:
+            compact["update"] = cls._compact_update_result(compact.get("update"))
+        if "monitorServer" in compact:
+            compact["monitorServer"] = cls._compact_server_snapshot(compact.get("monitorServer"))
+        if "monitorLaunch" in compact:
+            compact["monitorLaunch"] = cls._compact_monitor_launch(compact.get("monitorLaunch"))
+        if "startServers" in compact:
+            compact["startServers"] = cls._compact_server_batch(compact.get("startServers"))
+
+        timeline = compact.get("timeline")
+        if isinstance(timeline, list):
+            if len(timeline) > MAX_FINISH_TIMELINE_ENTRIES:
+                compact["timelineTruncated"] = len(timeline) - MAX_FINISH_TIMELINE_ENTRIES
+            compact["timeline"] = timeline[-MAX_FINISH_TIMELINE_ENTRIES:]
+
+        try:
+            payload_size = len(json.dumps(compact, ensure_ascii=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            return {
+                "commandType": command_type,
+                "message": cls._truncate_text(result.get("message")),
+                "truncated": True,
+            }
+
+        if payload_size <= MAX_FINISH_RESULT_BYTES:
+            return compact
+
+        fallback = {
+            "commandType": command_type,
+            "message": cls._truncate_text(result.get("message")),
+            "truncated": True,
+            "resultBytes": payload_size,
+        }
+        for key in ("validated", "updated", "needsUpdate", "previousBuildId", "currentBuildId", "latestBuildId", "monitorServerKey"):
+            if key in result:
+                fallback[key] = result.get(key)
+        start_servers = cls._compact_server_batch(result.get("startServers"))
+        if start_servers:
+            fallback["startServers"] = {
+                key: start_servers.get(key)
+                for key in ("changed", "total", "serverKeys", "message")
+                if key in start_servers
+            }
+        return fallback
+
     def _handle_ping(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         logs.append("Ping command completed")
         return self._ok_result(logs, {"pong": True})
@@ -326,10 +475,11 @@ class KepAgentApp:
         try:
             execution = self.execute_command(command, logs)
             logs.flush()
+            compact_result = self._compact_finish_result(command_type, execution.get("result"))
             self.client.finish_command(
                 command_id,
                 success=bool(execution.get("ok")),
-                result=execution.get("result"),
+                result=compact_result,
             )
         except CommandCancelled as exc:
             LOGGER.warning("Command cancelled: %s", exc)

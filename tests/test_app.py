@@ -1,0 +1,110 @@
+import sys
+import types
+import unittest
+
+if "docker" not in sys.modules:
+    docker_module = types.ModuleType("docker")
+    docker_module.DockerClient = object
+    docker_module.from_env = lambda: None
+
+    errors_module = types.ModuleType("docker.errors")
+
+    class NotFound(Exception):
+        pass
+
+    errors_module.NotFound = NotFound
+    docker_module.errors = errors_module
+
+    sys.modules["docker"] = docker_module
+    sys.modules["docker.errors"] = errors_module
+
+from kepagent.app import KepAgentApp
+
+
+class CompactFinishResultTests(unittest.TestCase):
+    def test_compacts_large_check_update_result(self) -> None:
+        result = {
+            "validated": True,
+            "updated": True,
+            "previousBuildId": "1",
+            "currentBuildId": "2",
+            "latestBuildId": "2",
+            "message": "Monitor success after 120 stable seconds, started 12 servers after monitor success",
+            "update": {
+                "stopAll": {
+                    "action": "remove",
+                    "group": "ALL",
+                    "changed": 12,
+                    "total": 13,
+                    "results": [{"message": f"removed server {index}", "changed": True} for index in range(13)],
+                },
+                "output": "\n".join(f"line {index}" for index in range(300)),
+                "metamod": {"changed": True, "message": "Metamod path inserted"},
+            },
+            "monitorServer": {
+                "key": "test",
+                "containerName": "kepcs2-pt-32010",
+                "state": "running",
+                "status": "running",
+                "primaryPort": 32010,
+                "restartCount": 0,
+                "id": "very-long-id",
+            },
+            "monitorLaunch": {
+                "monitorServerKey": "test",
+                "message": "Recreated monitor server test",
+                "cleanup": {
+                    "action": "remove",
+                    "changed": 1,
+                    "total": 1,
+                    "results": [{"message": "cleanup"}],
+                },
+                "launch": {
+                    "changed": True,
+                    "message": "started",
+                    "server": {
+                        "key": "test",
+                        "containerName": "kepcs2-pt-32010",
+                        "state": "running",
+                        "status": "running",
+                        "primaryPort": 32010,
+                        "restartCount": 0,
+                    },
+                },
+            },
+            "timeline": [{"status": "running", "restartCount": 0, "timestamp": index} for index in range(50)],
+            "startServers": {
+                "scope": "servers",
+                "action": "start",
+                "changed": 12,
+                "total": 12,
+                "serverKeys": [f"pt{index}" for index in range(1, 13)],
+                "results": [
+                    {
+                        "changed": True,
+                        "message": f"server {index} started",
+                        "server": {
+                            "key": f"pt{index}",
+                            "containerName": f"kepcs2-pt-{index}",
+                        },
+                    }
+                    for index in range(1, 13)
+                ],
+                "message": "Started 12 servers after monitor success",
+            },
+        }
+
+        compact = KepAgentApp._compact_finish_result("node.check_update", result)
+
+        self.assertTrue(compact["validated"])
+        self.assertEqual(compact["update"]["outputLineCount"], 300)
+        self.assertNotIn("output", compact["update"])
+        self.assertEqual(len(compact["timeline"]), 10)
+        self.assertEqual(compact["timelineTruncated"], 40)
+        self.assertEqual(compact["startServers"]["total"], 12)
+        self.assertEqual(len(compact["startServers"]["messages"]), 12)
+        self.assertNotIn("results", compact["startServers"])
+
+
+if __name__ == "__main__":
+    unittest.main()

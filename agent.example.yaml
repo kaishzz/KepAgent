@@ -10,7 +10,7 @@ group_labels:
   all: "全部"
   xl: "训练服"
   pt: "跑图服"
-  ks: "测试服"
+  test: "测试服"
 rcon_host: "127.0.0.1"
 # Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
@@ -19,7 +19,7 @@ steamcmd_sh: "/data/steamcmd/steamcmd.sh"
 cs2_root: "/data/cs2"
 app_id: 730
 # Default fallback used when the control plane command payload does not specify monitorServerKey.
-monitor_server_key: "ks"
+monitor_server_key: "test"
 monitor_poll_interval_seconds: 5
 monitor_stable_seconds: 120
 monitor_recover_timeout_seconds: 120
@@ -33,6 +33,8 @@ servers:
     # Optional per-server fallback when the command payload does not carry a password.
     # rcon_password: ""
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -67,6 +69,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "xl"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -101,6 +105,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "xl"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -135,6 +141,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "xl"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -169,6 +177,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "xl"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -203,6 +213,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "xl"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -237,6 +249,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -274,6 +288,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -311,6 +327,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -348,6 +366,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -385,6 +405,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -422,6 +444,8 @@ servers:
     image: "steamrt3:latest"
     groups: ["all", "pt"]
     entrypoint: ["/entrypoint.sh"]
+    stdin_open: true
+    tty: true
     command:
       - "bash"
       - "-lc"
@@ -454,10 +478,10 @@ servers:
       kepcs.exec_cfg: "z_pt_6.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "ks"
+  - key: "test"
     container_name: "kepcs2-pt-32010"
     image: "steamrt3:latest"
-    groups: ["all", "ks"]
+    groups: ["all", "test"]
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
@@ -488,7 +512,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "pt"
-      kepcs.server_key: "ks"
+      kepcs.mode: "test"
+      kepcs.server_key: "test"
       kepcs.exec_cfg: "z_ks.cfg"
     restart_policy: "unless-stopped"
