@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import queue
+import shutil
 import subprocess
 import threading
 import time
@@ -838,6 +839,31 @@ class DockerRuntime:
             "message": f"Latest buildid: {build_id}",
         }
 
+    def _cleanup_steamapps_before_validate(self) -> None:
+        steamapps_path = Path(self.config.cs2_root) / "steamapps"
+        manifest_path = steamapps_path / f"appmanifest_{self.config.app_id}.acf"
+
+        cleanup_targets = [
+            ("manifest", manifest_path),
+            ("directory", steamapps_path / "downloading"),
+            ("directory", steamapps_path / "temp"),
+        ]
+
+        for target_type, target_path in cleanup_targets:
+            if not target_path.exists():
+                self._emit_log(
+                    f"{target_type.capitalize()} already missing before validate: {target_path}"
+                )
+                continue
+
+            if target_type == "directory":
+                shutil.rmtree(target_path)
+                self._emit_log(f"Deleted steamapps directory before validate: {target_path}")
+                continue
+
+            target_path.unlink()
+            self._emit_log(f"Deleted manifest before validate: {target_path}")
+
     @staticmethod
     def _insert_metamod_search_path(content: str) -> tuple[str, bool]:
         newline = "\r\n" if "\r\n" in content else "\n"
@@ -889,12 +915,7 @@ class DockerRuntime:
         self._emit_log(
             f"Removed {stop_all['changed']} of {stop_all['total']} configured containers before validate"
         )
-        manifest_path = Path(self.config.cs2_root) / "steamapps" / f"appmanifest_{self.config.app_id}.acf"
-        if manifest_path.exists():
-            manifest_path.unlink()
-            self._emit_log(f"Deleted manifest before validate: {manifest_path}")
-        else:
-            self._emit_log(f"Manifest already missing before validate: {manifest_path}")
+        self._cleanup_steamapps_before_validate()
         self._emit_log(f"Running steamcmd app_update {self.config.app_id} validate")
         result = self._run_process(
             [
