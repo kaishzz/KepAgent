@@ -572,18 +572,45 @@ class DockerRuntime:
             "message": f"Latest buildid: {build_id}",
         }
 
+    @staticmethod
+    def _insert_metamod_search_path(content: str) -> tuple[str, bool]:
+        newline = "\r\n" if "\r\n" in content else "\n"
+        normalized = content.replace("\r\n", "\n")
+
+        if re.search(
+            r"(?m)^[ \t]*Game[ \t]+csgo/addons/metamod(?:[ \t]*(?://.*)?)?$",
+            normalized,
+        ):
+            return content, False
+
+        match = re.search(
+            r"(?m)^([ \t]*)Game([ \t]+)csgo(?:[ \t]*(?://.*)?)?$",
+            normalized,
+        )
+        if not match:
+            raise RuntimeError("Game csgo search path not found in gameinfo.gi")
+
+        indent, separator = match.group(1), match.group(2)
+        metamod_line = f"{indent}Game{separator}csgo/addons/metamod"
+        updated = (
+            normalized[: match.start()]
+            + metamod_line
+            + "\n"
+            + normalized[match.start() :]
+        )
+        return updated.replace("\n", newline), True
+
     def ensure_metamod_path(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         target = Path(self.config.cs2_root) / "game" / "csgo" / "gameinfo.gi"
         if not target.exists():
             raise RuntimeError(f"gameinfo.gi not found: {target}")
 
-        content = target.read_text(encoding="utf-8", errors="ignore").replace("\r\n", "\n")
-        metamod_line = "                        Game    csgo/addons/metamod"
-        if "csgo/addons/metamod" in content:
+        content = target.read_text(encoding="utf-8", errors="ignore")
+        updated, changed = self._insert_metamod_search_path(content)
+        if not changed:
             return {"changed": False, "message": "Metamod path already exists"}
 
-        updated = content.replace("\n                        Game    csgo", f"\n{metamod_line}\n                        Game    csgo", 1)
         target.write_text(updated, encoding="utf-8")
         return {"changed": True, "message": "Metamod path inserted"}
 
