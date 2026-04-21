@@ -114,6 +114,17 @@ class DockerRuntime:
 
         self._log_emitter(str(message or ""), level=str(level or "info"))
 
+    @staticmethod
+    def _format_elapsed(seconds: float) -> str:
+        total_seconds = max(0, int(seconds))
+        minutes, secs = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m {secs}s"
+        if minutes > 0:
+            return f"{minutes}m {secs}s"
+        return f"{secs}s"
+
     def _current_cancel_request(self) -> dict[str, Any] | None:
         if self._cancel_reader is None:
             return None
@@ -612,17 +623,30 @@ class DockerRuntime:
     def get_nowver(self) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log(f"Running steamcmd app_info_print for app {self.config.app_id}")
+        self._emit_log("Waiting for steamcmd to finish streaming app metadata before parsing remote buildid")
+        started_at = time.time()
+        last_wait_log_at = started_at
 
         def app_info_log_filter(stream_name: str, message: str) -> bool:
+            nonlocal last_wait_log_at
             if stream_name == "stderr":
                 return True
 
             stripped = message.strip()
-            return not (
+            is_metadata_line = (
                 stripped == "{"
                 or stripped == "}"
                 or stripped.startswith('"')
             )
+            if is_metadata_line:
+                now = time.time()
+                if now - last_wait_log_at >= 10:
+                    self._emit_log(
+                        f"steamcmd app_info_print is still streaming metadata, waited {self._format_elapsed(now - started_at)}"
+                    )
+                    last_wait_log_at = now
+                return False
+            return True
 
         try:
             result = self._run_process(
@@ -646,6 +670,9 @@ class DockerRuntime:
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_info_print failed")
 
+        self._emit_log(
+            f"steamcmd app_info_print completed in {self._format_elapsed(time.time() - started_at)}, parsing remote buildid"
+        )
         output = result["output"]
         matched = re.search(r'"public"\s*\{.*?"buildid"\s*"(\d+)"', output, flags=re.S)
         if not matched:
@@ -751,7 +778,9 @@ class DockerRuntime:
         self._emit_log(f"Compared buildid local={local_build} remote={remote_build}")
 
         if not needs_update:
-            self._emit_log("No update detected, skipped validate and monitor")
+            self._emit_log(
+                "No update detected, skipped validate and monitor check. Run node.monitor_check if you still want a crash check."
+            )
             return {
                 "currentBuildId": local_build,
                 "latestBuildId": remote_build,
@@ -821,7 +850,15 @@ class DockerRuntime:
         self._raise_if_cancel_requested()
         monitor_key = self._resolve_monitor_server_key(monitor_server_key)
         server = self.get_server(monitor_key)
-        self._emit_log(f"Launching monitor server {monitor_key}")
+        self._emit_log(
+            f"Launching monitor server {monitor_key} using container {server.container_name}"
+        )
+        self._emit_log(
+            "Monitor thresholds: "
+            f"stable={self.config.monitor_stable_seconds}s, "
+            f"recoverTimeout={self.config.monitor_recover_timeout_seconds}s, "
+            f"poll={max(1, self.config.monitor_poll_interval_seconds)}s"
+        )
         launch = self._launch_monitor_server(monitor_key)
         container = self._get_container(server.container_name)
         if not container:
@@ -833,6 +870,8 @@ class DockerRuntime:
         non_running_since = 0.0
         last_status = ""
         last_restart_count: int | None = None
+        monitor_started_at = time.time()
+        last_progress_log_at = 0.0
         timeline: list[dict[str, Any]] = []
 
         while True:
@@ -862,6 +901,16 @@ class DockerRuntime:
                     running_since = now
                     non_running_since = 0.0
 
+                if now - last_progress_log_at >= max(5, self.config.monitor_poll_interval_seconds):
+                    running_elapsed = now - running_since if running_since > 0 else 0
+                    total_elapsed = now - monitor_started_at
+                    self._emit_log(
+                        f"Monitor {monitor_key}: elapsed={self._format_elapsed(total_elapsed)}, "
+                        f"stableRunning={self._format_elapsed(running_elapsed)}/{self.config.monitor_stable_seconds}s, "
+                        f"restartCount={restart_count}"
+                    )
+                    last_progress_log_at = now
+
                 if now - running_since >= self.config.monitor_stable_seconds:
                     self._emit_log(
                         f"Monitor {monitor_key} stayed running for {self.config.monitor_stable_seconds} seconds"
@@ -889,7 +938,16 @@ class DockerRuntime:
             else:
                 if non_running_since <= 0:
                     non_running_since = now
-                elif now - non_running_since >= self.config.monitor_recover_timeout_seconds:
+                if now - last_progress_log_at >= max(5, self.config.monitor_poll_interval_seconds):
+                    waiting_elapsed = now - non_running_since if non_running_since > 0 else 0
+                    total_elapsed = now - monitor_started_at
+                    self._emit_log(
+                        f"Monitor {monitor_key}: elapsed={self._format_elapsed(total_elapsed)}, "
+                        f"status={status}, recoverWait={self._format_elapsed(waiting_elapsed)}/{self.config.monitor_recover_timeout_seconds}s, "
+                        f"restartCount={restart_count}"
+                    )
+                    last_progress_log_at = now
+                if now - non_running_since >= self.config.monitor_recover_timeout_seconds:
                     self.remove_server(monitor_key)
                     raise RuntimeError(f"Monitor timeout for {monitor_key}: status={status}")
 
