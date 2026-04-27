@@ -16,7 +16,7 @@ KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制
 - 训练服容器：`kepcs-ze-xl-<port>`
 - 跑图服容器：`kepcs-ze-pt-<port>`
 - 测试服容器：`kepcs-ze-xl-test-<port>`、`kepcs-ze-pt-test-<port>`
-- 默认分组：`all`、`ze_xl`、`ze_pt`、`test`
+- 默认分组：`all`、`ze_xl`、`ze_pt`、`ze_test`
 
 ## 当前职责
 
@@ -99,7 +99,7 @@ monitor_profiles:
 
 servers:
   - key: "ze_xl_test"
-    groups: ["test"]
+    groups: ["ze_test"]
     start_after_monitor: false
 ```
 

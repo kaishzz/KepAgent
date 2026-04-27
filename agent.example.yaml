@@ -10,8 +10,8 @@ group_labels:
   all: "全部"
   ze_xl: "训练服"
   ze_pt: "跑图服"
-  test: "测试服"
-group_order: ["all", "ze_xl", "ze_pt", "test"]
+  ze_test: "测试服"
+group_order: ["all", "ze_xl", "ze_pt", "ze_test"]
 rcon_host: "127.0.0.1"
 # Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
 rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
@@ -482,7 +482,7 @@ servers:
   - key: "ze_xl_test"
     container_name: "kepcs-ze-xl-test-32010"
     image: "steamrt3:latest"
-    groups: ["test"]
+    groups: ["ze_test"]
     start_after_monitor: false
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -519,7 +519,7 @@ servers:
   - key: "ze_pt_test"
     container_name: "kepcs-ze-pt-test-32020"
     image: "steamrt3:latest"
-    groups: ["test"]
+    groups: ["ze_test"]
     start_after_monitor: false
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
