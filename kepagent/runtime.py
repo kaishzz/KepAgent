@@ -13,7 +13,7 @@ from typing import Any, Callable
 import docker
 from docker.errors import NotFound
 
-from .config import AgentConfig, PortBinding, ServerDefinition, VolumeBinding
+from .config import AgentConfig, MonitorProfile, PortBinding, ServerDefinition, VolumeBinding
 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -664,6 +664,30 @@ class DockerRuntime:
         keys = [server.key for server in self.config.servers if server.key != monitor_server_key]
         return keys or [server.key for server in self.config.servers]
 
+    def _default_profile_start_server_keys(self, profile: MonitorProfile) -> list[str]:
+        if profile.start_server_keys is not None:
+            if not profile.start_server_keys:
+                return []
+            return [server.key for server in self._servers_for_keys(profile.start_server_keys)]
+
+        return [
+            server.key
+            for server in self.config.servers
+            if profile.key in server.groups and server.start_after_monitor
+        ]
+
+    def _should_use_monitor_profiles(
+        self,
+        *,
+        monitor_server_key: str | None = None,
+        start_server_keys: list[str] | None = None,
+    ) -> bool:
+        return (
+            bool(self.config.monitor_profiles)
+            and not str(monitor_server_key or "").strip()
+            and not bool(start_server_keys)
+        )
+
     def _launch_monitor_server(self, monitor_server_key: str) -> dict[str, Any]:
         cleanup = self.remove_server(monitor_server_key)
         launch = self.start_server(monitor_server_key)
@@ -680,19 +704,20 @@ class DockerRuntime:
         monitor_server_key: str,
         start_server_keys: list[str] | None = None,
     ) -> dict[str, Any]:
-        normalized_keys = (
-            [server.key for server in self._servers_for_keys(start_server_keys)]
-            if start_server_keys
-            else self._default_start_server_keys(monitor_server_key)
-        )
+        if start_server_keys is None:
+            normalized_keys = self._default_start_server_keys(monitor_server_key)
+        elif start_server_keys:
+            normalized_keys = [server.key for server in self._servers_for_keys(start_server_keys)]
+        else:
+            normalized_keys = []
         result = self._run_servers("start", normalized_keys)
         return {
             **result,
-            "defaulted": not bool(start_server_keys),
+            "defaulted": start_server_keys is None,
             "monitorServerKey": monitor_server_key,
             "message": (
                 f"Started {result['total']} selected servers"
-                if start_server_keys
+                if start_server_keys is not None
                 else f"Started {result['total']} servers after monitor success"
             ),
         }
@@ -1017,6 +1042,7 @@ class DockerRuntime:
             )
             return {
                 **validated,
+                "ok": bool(monitored.get("ok", True)),
                 "monitor": monitored,
                 "message": monitored["message"],
             }
@@ -1050,6 +1076,7 @@ class DockerRuntime:
         )
         return {
             **validated,
+            "ok": bool(monitored.get("ok", True)),
             "currentBuildId": validated["currentBuildId"],
             "latestBuildId": remote_build,
             "needsUpdate": False,
@@ -1073,6 +1100,89 @@ class DockerRuntime:
         return self._run_check_validate()
 
     def monitor_check(
+        self,
+        start_after_success: bool = False,
+        *,
+        monitor_server_key: str | None = None,
+        start_server_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if self._should_use_monitor_profiles(
+            monitor_server_key=monitor_server_key,
+            start_server_keys=start_server_keys,
+        ):
+            return self._monitor_profiles_check(start_after_success=start_after_success)
+
+        return self._monitor_check_single(
+            start_after_success=start_after_success,
+            monitor_server_key=monitor_server_key,
+            start_server_keys=start_server_keys,
+        )
+
+    def _monitor_profiles_check(self, *, start_after_success: bool) -> dict[str, Any]:
+        profile_results: list[dict[str, Any]] = []
+        success_count = 0
+        failed_count = 0
+
+        for profile in self.config.monitor_profiles:
+            self._raise_if_cancel_requested()
+            monitor_key = str(profile.monitor_server_key or "").strip()
+            if not monitor_key:
+                failed_count += 1
+                profile_results.append({
+                    "ok": False,
+                    "profileKey": profile.key,
+                    "monitorServerKey": monitor_key,
+                    "message": f"Monitor profile {profile.key} has no monitor_server_key",
+                })
+                continue
+
+            start_keys = self._default_profile_start_server_keys(profile) if start_after_success else []
+            self._emit_log(
+                f"Monitor profile {profile.key}: checking {monitor_key}"
+                + (f", start targets: {', '.join(start_keys)}" if start_after_success and start_keys else "")
+            )
+
+            try:
+                result = self._monitor_check_single(
+                    start_after_success=start_after_success,
+                    monitor_server_key=monitor_key,
+                    start_server_keys=start_keys,
+                )
+            except CommandCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                failed_count += 1
+                self._emit_log(f"Monitor profile {profile.key} failed: {exc}", level="error")
+                profile_results.append({
+                    "ok": False,
+                    "profileKey": profile.key,
+                    "monitorServerKey": monitor_key,
+                    "startServerKeys": start_keys,
+                    "message": str(exc),
+                })
+                continue
+
+            success_count += 1
+            result["profileKey"] = profile.key
+            result["startServerKeys"] = start_keys
+            profile_results.append(result)
+
+        ok = failed_count == 0
+        action_text = "checked and started configured servers" if start_after_success else "checked"
+        message = (
+            f"Monitor profiles {action_text}: "
+            f"{success_count} succeeded, {failed_count} failed"
+        )
+        return {
+            "ok": ok,
+            "profileResults": profile_results,
+            "success": success_count,
+            "failed": failed_count,
+            "total": len(profile_results),
+            "message": message,
+        }
+
+    def _monitor_check_single(
         self,
         start_after_success: bool = False,
         *,

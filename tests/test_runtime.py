@@ -229,6 +229,86 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
             ["ze_xl_1", "ze_pt_1"],
         )
 
+    def test_profile_defaults_to_matching_group_with_start_flag(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            servers=[
+                SimpleNamespace(key="ze_xl_1", groups=["ze_xl"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_2", groups=["ze_xl"], start_after_monitor=True),
+                SimpleNamespace(key="ze_pt_1", groups=["ze_pt"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_test", groups=["ze_xl", "test"], start_after_monitor=False),
+            ]
+        )
+        profile = SimpleNamespace(key="ze_xl", monitor_server_key="ze_xl_1", start_server_keys=None)
+
+        self.assertEqual(
+            runtime._default_profile_start_server_keys(profile),
+            ["ze_xl_1", "ze_xl_2"],
+        )
+
+    def test_empty_explicit_start_targets_do_not_fall_back_to_defaults(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime._run_servers = lambda action, keys: {
+            "action": action,
+            "serverKeys": keys,
+            "changed": 0,
+            "total": len(keys),
+            "results": [],
+        }
+
+        result = runtime.start_after_monitor(
+            monitor_server_key="ze_xl_1",
+            start_server_keys=[],
+        )
+
+        self.assertFalse(result["defaulted"])
+        self.assertEqual(result["serverKeys"], [])
+        self.assertEqual(result["total"], 0)
+
+    def test_monitor_profiles_continue_after_one_profile_fails(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            monitor_profiles=[
+                SimpleNamespace(key="ze_xl", monitor_server_key="ze_xl_1", start_server_keys=None),
+                SimpleNamespace(key="ze_pt", monitor_server_key="ze_pt_1", start_server_keys=None),
+            ],
+        )
+        runtime._raise_if_cancel_requested = lambda: None
+        runtime._emit_log = lambda _message, level="info": None
+        runtime._default_profile_start_server_keys = lambda profile: [f"{profile.key}_1", f"{profile.key}_2"]
+
+        calls: list[tuple[str | None, list[str] | None]] = []
+
+        def fake_monitor_check_single(**kwargs):
+            monitor_key = kwargs.get("monitor_server_key")
+            start_keys = kwargs.get("start_server_keys")
+            calls.append((monitor_key, start_keys))
+            if monitor_key == "ze_pt_1":
+                raise RuntimeError("ze_pt crashed")
+            return {
+                "ok": True,
+                "monitorServerKey": monitor_key,
+                "message": f"{monitor_key} passed",
+            }
+
+        runtime._monitor_check_single = fake_monitor_check_single
+
+        result = runtime.monitor_check(start_after_success=True)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["success"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(
+            calls,
+            [
+                ("ze_xl_1", ["ze_xl_1", "ze_xl_2"]),
+                ("ze_pt_1", ["ze_pt_1", "ze_pt_2"]),
+            ],
+        )
+        self.assertEqual(result["profileResults"][0]["profileKey"], "ze_xl")
+        self.assertEqual(result["profileResults"][1]["profileKey"], "ze_pt")
+        self.assertFalse(result["profileResults"][1]["ok"])
+
 
 class RestartServerTests(unittest.TestCase):
     def test_recreates_container_with_force_remove_before_start(self) -> None:

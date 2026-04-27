@@ -28,7 +28,7 @@ KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制
 - 按单个 `key` 或批量 `serverKeys` 处理服务器启动、停止、重启和删除命令
 - 发送 RCON 命令
 - 执行 `steamcmd app_update ... validate`
-- 执行监控服崩溃检查，并在成功后启动指定服务器
+- 执行单监控服或多模式崩溃检查，并在对应模式检查成功后启动该模式配置的服务器
 
 ## 支持命令
 
@@ -78,6 +78,22 @@ cp agent.example.yaml agent.yaml
 - `monitor_server_key`
 - RCON 兜底密码
 - 监控轮询、稳定时长和恢复超时
+- `monitor_profiles` 多模式监控配置
+
+多模式崩溃检查示例：
+
+```yaml
+monitor_profiles:
+  - key: "ze_xl"
+    monitor_server_key: "ze_xl_1"
+  - key: "ze_pt"
+    monitor_server_key: "ze_pt_1"
+
+servers:
+  - key: "ze_xl_test"
+    groups: ["test"]
+    start_after_monitor: false
+```
 
 RCON 密码优先级：
 
@@ -105,8 +121,11 @@ python3 main.py --version
 - `node.check_update`：先尝试比对本地和远端 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
 - `node.check_validate`：直接停服并执行 `validate`；如果本地没有 manifest，会先打印“没有 manifest”再继续
 - `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；重启会先强制删除容器再按配置重新创建启动
-- `node.monitor_check`：只运行监控服检查，不自动启动其它服务器
-- `node.monitor_start`：监控通过后启动选定服务器；如果命令未指定 `startServerKeys`，默认启动除监控服外的默认目标
+- `node.monitor_check`：只运行崩溃检查，不自动启动其它服务器；配置了 `monitor_profiles` 时会按 profile 逐个检查
+- `node.monitor_start`：监控通过后启动 YAML 中配置的目标；配置了 `monitor_profiles` 时各模式独立检查，某个模式失败只会阻止该模式启动，不影响其它已通过模式
+- `monitor_profiles[].monitor_server_key` 指定该模式用于崩溃检查的服务器，例如 `ze_xl_1`、`ze_pt_1`
+- `monitor_profiles[].start_server_keys` 可显式指定该模式检查成功后启动哪些服务器；不填写时默认启动同名分组里 `start_after_monitor: true` 的服务器
+- `servers[].start_after_monitor: false` 可让测试服或备用服不参与自动启动
 
 ## 测试
 

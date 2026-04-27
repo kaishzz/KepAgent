@@ -43,6 +43,12 @@ class ServerDefinition(BaseModel):
     restart_policy: str = "unless-stopped"
 
 
+class MonitorProfile(BaseModel):
+    key: str
+    monitor_server_key: str
+    start_server_keys: list[str] | None = None
+
+
 class AgentConfig(BaseModel):
     api_base_url: str
     api_key: str
@@ -63,6 +69,7 @@ class AgentConfig(BaseModel):
     monitor_stable_seconds: int = 120
     monitor_recover_timeout_seconds: int = 120
     monitor_restart_threshold: int = 2
+    monitor_profiles: list[MonitorProfile] = Field(default_factory=list)
     servers: list[ServerDefinition] = Field(default_factory=list)
 
 

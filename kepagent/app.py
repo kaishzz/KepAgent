@@ -190,6 +190,10 @@ class KepAgentApp:
         return {"ok": True, "logs": logs.messages(), "result": result}
 
     @staticmethod
+    def _command_result(logs: LiveCommandLogger, result: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": bool(result.get("ok", True)), "logs": logs.messages(), "result": result}
+
+    @staticmethod
     def _truncate_text(value: Any, limit: int = MAX_FINISH_TEXT_LENGTH) -> str:
         text = str(value or "").strip()
         if len(text) <= limit:
@@ -427,10 +431,10 @@ class KepAgentApp:
     def _handle_check_update(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.check_update(
             monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload),
+            start_server_keys=self._command_server_keys(payload) or None,
         )
         logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._command_result(logs, result)
 
     def _handle_check_validate(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.check_validate()
@@ -451,19 +455,19 @@ class KepAgentApp:
         result = self.runtime.monitor_check(
             start_after_success=False,
             monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload),
+            start_server_keys=self._command_server_keys(payload) or None,
         )
         logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._command_result(logs, result)
 
     def _handle_monitor_start(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.monitor_check(
             start_after_success=True,
             monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload),
+            start_server_keys=self._command_server_keys(payload) or None,
         )
         logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._command_result(logs, result)
 
     def execute_command(self, command: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         command_type = str(command.get("commandType") or "").strip()
