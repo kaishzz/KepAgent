@@ -80,14 +80,22 @@ cp agent.example.yaml agent.yaml
 - 监控轮询、稳定时长和恢复超时
 - `monitor_profiles` 多模式监控配置
 
+`agent.example.yaml` 和 `agent.example2.yaml` 会尽量显式写出 KepAgent 支持的配置字段。空字符串字段使用 `""`，可空 Docker 参数使用 `null`，列表和映射分别使用 `[]`、`{}`，方便复制后直接按节点情况填写。
+
 多模式崩溃检查示例：
 
 ```yaml
 monitor_profiles:
   - key: "ze_xl"
     monitor_server_key: "ze_xl_1"
+    start_server_keys:
+      - "ze_xl_1"
+      - "ze_xl_2"
   - key: "ze_pt"
     monitor_server_key: "ze_pt_1"
+    start_server_keys:
+      - "ze_pt_1"
+      - "ze_pt_2"
 
 servers:
   - key: "ze_xl_test"
@@ -126,6 +134,7 @@ python3 main.py --version
 - `monitor_profiles[].monitor_server_key` 指定该模式用于崩溃检查的服务器，例如 `ze_xl_1`、`ze_pt_1`
 - `monitor_profiles[].start_server_keys` 可显式指定该模式检查成功后启动哪些服务器；不填写时默认启动同名分组里 `start_after_monitor: true` 的服务器
 - `servers[].start_after_monitor: false` 可让测试服或备用服不参与自动启动
+- 崩溃检查的监控服和启动目标只从 YAML 读取，控制平面命令 payload 不再覆盖 `monitorServerKey` 或 `startServerKeys`
 
 ## 测试
 

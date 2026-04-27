@@ -166,7 +166,7 @@ class KepAgentApp:
         return str(payload.get("group", "")).strip()
 
     @staticmethod
-    def _command_server_keys(payload: dict[str, Any], field_name: str = "startServerKeys") -> list[str]:
+    def _command_server_keys(payload: dict[str, Any], field_name: str = "serverKeys") -> list[str]:
         values = payload.get(field_name)
         if not isinstance(values, list):
             return []
@@ -179,11 +179,6 @@ class KepAgentApp:
                 normalized.append(safe_value)
                 seen.add(safe_value)
         return normalized
-
-    @staticmethod
-    def _command_monitor_server_key(payload: dict[str, Any]) -> str | None:
-        safe_value = str(payload.get("monitorServerKey") or "").strip()
-        return safe_value or None
 
     @staticmethod
     def _ok_result(logs: LiveCommandLogger, result: dict[str, Any]) -> dict[str, Any]:
@@ -428,11 +423,8 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_check_update(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
-        result = self.runtime.check_update(
-            monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload) or None,
-        )
+    def _handle_check_update(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+        result = self.runtime.check_update()
         logs.append(result["message"])
         return self._command_result(logs, result)
 
@@ -451,20 +443,16 @@ class KepAgentApp:
         logs.append(result["message"])
         return self._ok_result(logs, result)
 
-    def _handle_monitor_check(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+    def _handle_monitor_check(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.monitor_check(
             start_after_success=False,
-            monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload) or None,
         )
         logs.append(result["message"])
         return self._command_result(logs, result)
 
-    def _handle_monitor_start(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+    def _handle_monitor_start(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.monitor_check(
             start_after_success=True,
-            monitor_server_key=self._command_monitor_server_key(payload),
-            start_server_keys=self._command_server_keys(payload) or None,
         )
         logs.append(result["message"])
         return self._command_result(logs, result)

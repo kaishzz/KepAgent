@@ -676,18 +676,6 @@ class DockerRuntime:
             if profile.key in server.groups and server.start_after_monitor
         ]
 
-    def _should_use_monitor_profiles(
-        self,
-        *,
-        monitor_server_key: str | None = None,
-        start_server_keys: list[str] | None = None,
-    ) -> bool:
-        return (
-            bool(self.config.monitor_profiles)
-            and not str(monitor_server_key or "").strip()
-            and not bool(start_server_keys)
-        )
-
     def _launch_monitor_server(self, monitor_server_key: str) -> dict[str, Any]:
         cleanup = self.remove_server(monitor_server_key)
         launch = self.start_server(monitor_server_key)
@@ -1025,8 +1013,6 @@ class DockerRuntime:
         self,
         *,
         start_after_success: bool,
-        monitor_server_key: str | None = None,
-        start_server_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         self._raise_if_cancel_requested()
         self._emit_log("Checking local buildid")
@@ -1035,11 +1021,7 @@ class DockerRuntime:
             self._emit_log("没有 manifest，直接进入 validate 流程")
             validated = self._run_check_validate(before_build=None, before_build_known=True)
             self._emit_log("Validate completed, starting monitor check")
-            monitored = self.monitor_check(
-                start_after_success=start_after_success,
-                monitor_server_key=monitor_server_key,
-                start_server_keys=start_server_keys,
-            )
+            monitored = self.monitor_check(start_after_success=start_after_success)
             return {
                 **validated,
                 "ok": bool(monitored.get("ok", True)),
@@ -1069,11 +1051,7 @@ class DockerRuntime:
         self._emit_log("Update detected, starting validate pipeline")
         validated = self.check_validate()
         self._emit_log("Validate completed, starting monitor check")
-        monitored = self.monitor_check(
-            start_after_success=start_after_success,
-            monitor_server_key=monitor_server_key,
-            start_server_keys=start_server_keys,
-        )
+        monitored = self.monitor_check(start_after_success=start_after_success)
         return {
             **validated,
             "ok": bool(monitored.get("ok", True)),
@@ -1084,17 +1062,8 @@ class DockerRuntime:
             "message": monitored["message"],
         }
 
-    def check_update(
-        self,
-        *,
-        monitor_server_key: str | None = None,
-        start_server_keys: list[str] | None = None,
-    ) -> dict[str, Any]:
-        return self._run_update_pipeline(
-            start_after_success=True,
-            monitor_server_key=monitor_server_key,
-            start_server_keys=start_server_keys,
-        )
+    def check_update(self) -> dict[str, Any]:
+        return self._run_update_pipeline(start_after_success=True)
 
     def check_validate(self) -> dict[str, Any]:
         return self._run_check_validate()
@@ -1102,21 +1071,11 @@ class DockerRuntime:
     def monitor_check(
         self,
         start_after_success: bool = False,
-        *,
-        monitor_server_key: str | None = None,
-        start_server_keys: list[str] | None = None,
     ) -> dict[str, Any]:
-        if self._should_use_monitor_profiles(
-            monitor_server_key=monitor_server_key,
-            start_server_keys=start_server_keys,
-        ):
+        if self.config.monitor_profiles:
             return self._monitor_profiles_check(start_after_success=start_after_success)
 
-        return self._monitor_check_single(
-            start_after_success=start_after_success,
-            monitor_server_key=monitor_server_key,
-            start_server_keys=start_server_keys,
-        )
+        return self._monitor_check_single(start_after_success=start_after_success)
 
     def _monitor_profiles_check(self, *, start_after_success: bool) -> dict[str, Any]:
         profile_results: list[dict[str, Any]] = []

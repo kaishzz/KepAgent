@@ -25,6 +25,12 @@ These rules apply to the `E:\GitHubProjects\KepRepository\KepAgent` workspace.
 
 - Example files and real files must stay structurally aligned.
 - In this repo, the primary mappings are `.env.example` -> `.env` and `agent.example.yaml` -> `agent.yaml`.
+- YAML example files must expose every supported config field from `kepagent/config.py` so operators can discover available variables from the example itself.
+- When adding or changing Agent config fields, update `agent.example.yaml` and any ignored companion examples such as `agent.example2.yaml` in the same pass.
+- Keep `agent.example.yaml` and `agent.example2.yaml` aligned in top-level variable names, comment intent, field ordering, and repeated server field skeletons.
+- When synchronizing example YAML files, preserve each file's existing real data such as server keys, container names, groups, ports, mounts, labels, commands, and mode-specific values.
+- Prefer explicit empty placeholders in YAML examples instead of omitting optional fields: use `""` for empty strings, `null` for nullable Docker options, `[]` for empty lists, and `{}` for empty maps.
+- Repeated server examples should keep the same field skeleton where practical, including `start_after_monitor`, `rcon_password`, `working_dir`, `network_mode`, `entrypoint`, `command`, `env`, `ports`, `volumes`, `labels`, `stdin_open`, `tty`, and `restart_policy`.
 - When an example file adds keys, fields, or variables, add the missing ones to the real file.
 - When an example file removes obsolete keys or fields, remove the corresponding entries from the real file only if they are part of that same mirrored structure.
 - When an example file renames or restructures keys or fields, apply the same name and structure changes to the real file while preserving the user's existing values whenever possible.
