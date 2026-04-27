@@ -546,6 +546,18 @@ class DockerRuntime:
             "server": self.inspect_server(key),
         }
 
+    def start_servers(self, server_keys: list[str]) -> dict[str, Any]:
+        return self._run_servers("start", server_keys)
+
+    def stop_servers(self, server_keys: list[str]) -> dict[str, Any]:
+        return self._run_servers("stop", server_keys)
+
+    def restart_servers(self, server_keys: list[str]) -> dict[str, Any]:
+        return self._run_servers("restart", server_keys)
+
+    def remove_servers(self, server_keys: list[str]) -> dict[str, Any]:
+        return self._run_servers("remove", server_keys)
+
     def _run_group(self, group: str, action: str) -> dict[str, Any]:
         servers = self.get_group(group)
         results = []
@@ -587,6 +599,7 @@ class DockerRuntime:
             "changed": changed,
             "total": len(results),
             "results": results,
+            "message": f"Batch {action} handled {len(results)} servers, changed {changed}",
         }
 
     def _run_all(self, action: str) -> dict[str, Any]:

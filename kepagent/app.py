@@ -321,7 +321,20 @@ class KepAgentApp:
             "truncated": True,
             "resultBytes": payload_size,
         }
-        for key in ("validated", "updated", "needsUpdate", "previousBuildId", "currentBuildId", "latestBuildId", "monitorServerKey"):
+        for key in (
+            "validated",
+            "updated",
+            "needsUpdate",
+            "previousBuildId",
+            "currentBuildId",
+            "latestBuildId",
+            "monitorServerKey",
+            "scope",
+            "action",
+            "changed",
+            "total",
+            "serverKeys",
+        ):
             if key in result:
                 fallback[key] = result.get(key)
         start_servers = cls._compact_server_batch(result.get("startServers"))
@@ -347,25 +360,28 @@ class KepAgentApp:
             },
         )
 
-    def _handle_start_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
-        result = self.runtime.start_server(self._command_key(payload))
+    def _handle_server_action(self, action: str, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+        server_keys = self._command_server_keys(payload, "serverKeys")
+        if server_keys:
+            result = getattr(self.runtime, f"{action}_servers")(server_keys)
+            logs.append(f"Batch {action} handled {result['total']} servers, changed {result['changed']}")
+            return self._ok_result(logs, result)
+
+        result = getattr(self.runtime, f"{action}_server")(self._command_key(payload))
         logs.append(result["message"])
         return self._ok_result(logs, result)
+
+    def _handle_start_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+        return self._handle_server_action("start", payload, logs)
 
     def _handle_stop_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
-        result = self.runtime.stop_server(self._command_key(payload))
-        logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._handle_server_action("stop", payload, logs)
 
     def _handle_restart_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
-        result = self.runtime.restart_server(self._command_key(payload))
-        logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._handle_server_action("restart", payload, logs)
 
     def _handle_remove_server(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
-        result = self.runtime.remove_server(self._command_key(payload))
-        logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._handle_server_action("remove", payload, logs)
 
     def _handle_start_group(self, payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.start_group(self._command_group(payload))

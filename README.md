@@ -25,6 +25,7 @@ KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制
 - 轮询、领取、执行并回传节点命令
 - 回传执行日志和结果摘要
 - 管理 CS2 Docker 容器
+- 按单个 `key` 或批量 `serverKeys` 处理服务器启动、停止、重启和删除命令
 - 发送 RCON 命令
 - 执行 `steamcmd app_update ... validate`
 - 执行监控服崩溃检查，并在成功后启动指定服务器
@@ -103,6 +104,7 @@ python3 main.py --version
 
 - `node.check_update`：先尝试比对本地和远端 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
 - `node.check_validate`：直接停服并执行 `validate`；如果本地没有 manifest，会先打印“没有 manifest”再继续
+- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果
 - `node.monitor_check`：只运行监控服检查，不自动启动其它服务器
 - `node.monitor_start`：监控通过后启动选定服务器；如果命令未指定 `startServerKeys`，默认启动除监控服外的默认目标
 

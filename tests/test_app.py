@@ -18,7 +18,7 @@ if "docker" not in sys.modules:
     sys.modules["docker"] = docker_module
     sys.modules["docker.errors"] = errors_module
 
-from kepagent.app import KepAgentApp
+from kepagent.app import KepAgentApp, LiveCommandLogger
 
 
 class CompactFinishResultTests(unittest.TestCase):
@@ -166,6 +166,66 @@ class ProcessOneCommandTests(unittest.TestCase):
             {"message": "Current buildid: 22880072"},
         )
         self.assertGreaterEqual(len(appended_batches), 1)
+
+
+class ServerActionHandlerTests(unittest.TestCase):
+    def test_uses_batch_server_keys_when_present(self) -> None:
+        class FakeRuntime:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, list[str]]] = []
+
+            def start_servers(self, server_keys: list[str]) -> dict[str, object]:
+                self.calls.append(("start_servers", server_keys))
+                return {
+                    "scope": "servers",
+                    "action": "start",
+                    "serverKeys": server_keys,
+                    "changed": 2,
+                    "total": len(server_keys),
+                    "results": [],
+                }
+
+            def start_server(self, _key: str) -> dict[str, object]:
+                raise AssertionError("single-server handler should not be used")
+
+        runtime = FakeRuntime()
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.runtime = runtime
+        logs = LiveCommandLogger(lambda _batch: None)
+
+        result = app._handle_start_server(
+            {"serverKeys": ["ze_xl_1", " ", "ze_xl_1", "ze_pt_1"]},
+            logs,
+        )
+
+        self.assertEqual(runtime.calls, [("start_servers", ["ze_xl_1", "ze_pt_1"])])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["total"], 2)
+        self.assertEqual(result["logs"], ["Batch start handled 2 servers, changed 2"])
+
+    def test_keeps_single_key_compatibility(self) -> None:
+        class FakeRuntime:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str]] = []
+
+            def restart_server(self, key: str) -> dict[str, object]:
+                self.calls.append(("restart_server", key))
+                return {"changed": True, "message": f"{key} restarted"}
+
+            def restart_servers(self, _server_keys: list[str]) -> dict[str, object]:
+                raise AssertionError("batch handler should not be used")
+
+        runtime = FakeRuntime()
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.runtime = runtime
+        logs = LiveCommandLogger(lambda _batch: None)
+
+        result = app._handle_restart_server({"key": "ze_xl_1"}, logs)
+
+        self.assertEqual(runtime.calls, [("restart_server", "ze_xl_1")])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["message"], "ze_xl_1 restarted")
+        self.assertEqual(result["logs"], ["ze_xl_1 restarted"])
 
 
 if __name__ == "__main__":
