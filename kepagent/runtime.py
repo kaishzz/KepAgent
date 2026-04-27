@@ -514,19 +514,20 @@ class DockerRuntime:
             "server": self.inspect_server(key),
         }
 
-    def restart_server(self, key: str, timeout: int = 10) -> dict[str, Any]:
+    def restart_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
         container = self._get_container(server.container_name)
 
-        if not container:
-            return self.start_server(key)
+        removed = False
+        if container:
+            container.remove(force=True)
+            removed = True
 
-        container.restart(timeout=timeout)
-        return {
-            "changed": True,
-            "message": f"{server.container_name} restarted",
-            "server": self.inspect_server(key),
-        }
+        result = self.start_server(key)
+        result["changed"] = True
+        result["removed"] = removed
+        result["message"] = f"{server.container_name} recreated"
+        return result
 
     def remove_server(self, key: str, force: bool = True) -> dict[str, Any]:
         server = self.get_server(key)

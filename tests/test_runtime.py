@@ -230,5 +230,37 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
         )
 
 
+class RestartServerTests(unittest.TestCase):
+    def test_recreates_container_with_force_remove_before_start(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        class FakeContainer:
+            def remove(self, force: bool = False) -> None:
+                calls.append(("remove", force))
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.get_server = lambda key: SimpleNamespace(container_name="kepcs-ze-xl-28010")
+        runtime._get_container = lambda name: calls.append(("get_container", name)) or FakeContainer()
+        runtime.start_server = lambda key: calls.append(("start_server", key)) or {
+            "changed": False,
+            "message": "start result",
+            "server": {"key": key},
+        }
+
+        result = DockerRuntime.restart_server(runtime, "ze_xl_1")
+
+        self.assertEqual(
+            calls,
+            [
+                ("get_container", "kepcs-ze-xl-28010"),
+                ("remove", True),
+                ("start_server", "ze_xl_1"),
+            ],
+        )
+        self.assertTrue(result["changed"])
+        self.assertTrue(result["removed"])
+        self.assertEqual(result["message"], "kepcs-ze-xl-28010 recreated")
+
+
 if __name__ == "__main__":
     unittest.main()

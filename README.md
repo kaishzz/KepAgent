@@ -104,7 +104,7 @@ python3 main.py --version
 
 - `node.check_update`：先尝试比对本地和远端 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
 - `node.check_validate`：直接停服并执行 `validate`；如果本地没有 manifest，会先打印“没有 manifest”再继续
-- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果
+- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；重启会先强制删除容器再按配置重新创建启动
 - `node.monitor_check`：只运行监控服检查，不自动启动其它服务器
 - `node.monitor_start`：监控通过后启动选定服务器；如果命令未指定 `startServerKeys`，默认启动除监控服外的默认目标
 
