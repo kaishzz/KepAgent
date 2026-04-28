@@ -37,7 +37,6 @@ class ServerDefinition(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
     working_dir: str | None = None
     network_mode: str | None = None
-    rcon_password: str = ""
     stdin_open: bool = False
     tty: bool = False
     restart_policy: str = "unless-stopped"
@@ -60,7 +59,6 @@ class AgentConfig(BaseModel):
     group_labels: dict[str, str] = Field(default_factory=dict)
     group_order: list[str] = Field(default_factory=list)
     rcon_host: str = "127.0.0.1"
-    rcon_password: str = ""
     rcon_timeout_seconds: int = 5
     steamcmd_sh: str = "/data/steamcmd/steamcmd.sh"
     cs2_root: str = "/data/cs2"

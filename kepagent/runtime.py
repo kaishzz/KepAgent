@@ -787,12 +787,8 @@ class DockerRuntime:
                 if key and password:
                     override_password_by_key[key] = password
 
-        effective_server_keys = server_keys or list(override_password_by_key.keys())
-        resolved_targets = (
-            self._servers_for_keys(effective_server_keys)
-            if effective_server_keys
-            else self.get_group(group)
-        )
+        effective_server_keys = server_keys or []
+        resolved_targets = self._servers_for_keys(effective_server_keys) if effective_server_keys else []
         results = []
         success = 0
 
@@ -802,11 +798,7 @@ class DockerRuntime:
             response_text = ""
             ok = False
             error_message = ""
-            password = (
-                override_password_by_key.get(server.key)
-                or str(server.rcon_password or "").strip()
-                or self.config.rcon_password
-            )
+            password = override_password_by_key.get(server.key)
             try:
                 if not str(password or "").strip():
                     raise RuntimeError("RCON password is empty")

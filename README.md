@@ -62,7 +62,6 @@ cp .env.example .env
 
 - `KEPAGENT_API_BASE_URL`
 - `KEPAGENT_API_KEY`
-- `KEPAGENT_RCON_PASSWORD`
 - `KEPAGENT_BATCH_START_INTERVAL_SECONDS`
 
 ### 2. 节点配置
@@ -78,7 +77,6 @@ cp agent.example.yaml agent.yaml
 - 分组与分组显示名
 - 批量启动间隔秒数
 - `monitor_server_key`
-- RCON 兜底密码
 - 监控轮询、稳定时长和恢复超时
 - `monitor_profiles` 多模式监控配置
 
@@ -105,11 +103,7 @@ servers:
     start_after_monitor: false
 ```
 
-RCON 密码优先级：
-
-1. 控制平面命令 payload 透传
-2. `servers[].rcon_password`
-3. 全局 `KEPAGENT_RCON_PASSWORD`
+RCON 密码只使用控制平面命令 payload 透传的值；KepCs 控制台会从服务器目录数据库读取对应服务器的 RCON 密码后随命令下发。未下发密码的目标会在执行 RCON 时返回 `RCON password is empty`。
 
 ## 运行
 

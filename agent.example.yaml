@@ -8,35 +8,54 @@ request_timeout_seconds: 15
 batch_start_interval_seconds: "${KEPAGENT_BATCH_START_INTERVAL_SECONDS:-30}"
 docker_base_url: null
 group_labels:
-  all: "全部"
   ze_xl: "训练服"
   ze_pt: "跑图服"
   ze_test: "测试服"
-group_order: ["all", "ze_xl", "ze_pt", "ze_test"]
+group_order: ["ze_xl", "ze_pt", "ze_test"]
 rcon_host: "127.0.0.1"
-# Optional global fallback. KepCs console manual RCON usually sends per-server passwords in command payloads.
-rcon_password: "${KEPAGENT_RCON_PASSWORD:-}"
 rcon_timeout_seconds: 5
 steamcmd_sh: "/data/steamcmd/steamcmd.sh"
 cs2_root: "/data/cs2"
 app_id: 730
-# Default fallback used when the control plane command payload does not specify monitorServerKey.
-monitor_server_key: "ze_pt_test"
+# Single-profile fallback used only when monitor_profiles is empty.
+monitor_server_key: "ze_xl_1"
 monitor_poll_interval_seconds: 5
 monitor_stable_seconds: 120
 monitor_recover_timeout_seconds: 120
 monitor_restart_threshold: 2
-
+# Mode-scoped crash checks. Each profile checks one monitor server and starts only its own configured servers after success.
+monitor_profiles:
+  - key: "ze_xl"
+    monitor_server_key: "ze_xl_1"
+    # Servers started only after this profile passes crash check.
+    start_server_keys:
+      - "ze_xl_1"
+      - "ze_xl_2"
+      - "ze_xl_3"
+      - "ze_xl_4"
+      - "ze_xl_5"
+      - "ze_xl_6"
+  - key: "ze_pt"
+    monitor_server_key: "ze_pt_1"
+    # Servers started only after this profile passes crash check.
+    start_server_keys:
+      - "ze_pt_1"
+      - "ze_pt_2"
+      - "ze_pt_3"
+      - "ze_pt_4"
+      - "ze_pt_5"
+      - "ze_pt_6"
 servers:
   - key: "ze_xl_1"
     container_name: "kepcs-ze-xl-28010"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
-    # Optional per-server fallback when the command payload does not carry a password.
-    # rcon_password: ""
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -69,10 +88,13 @@ servers:
   - key: "ze_xl_2"
     container_name: "kepcs-ze-xl-28020"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -105,10 +127,13 @@ servers:
   - key: "ze_xl_3"
     container_name: "kepcs-ze-xl-28030"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -141,10 +166,13 @@ servers:
   - key: "ze_xl_4"
     container_name: "kepcs-ze-xl-28040"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -177,10 +205,13 @@ servers:
   - key: "ze_xl_5"
     container_name: "kepcs-ze-xl-28050"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -213,10 +244,13 @@ servers:
   - key: "ze_xl_6"
     container_name: "kepcs-ze-xl-28060"
     image: "steamrt3:latest"
-    groups: ["all", "ze_xl"]
+    groups: ["ze_xl"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -249,10 +283,13 @@ servers:
   - key: "ze_pt_1"
     container_name: "kepcs-ze-pt-29010"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -288,10 +325,13 @@ servers:
   - key: "ze_pt_2"
     container_name: "kepcs-ze-pt-29020"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -327,10 +367,13 @@ servers:
   - key: "ze_pt_3"
     container_name: "kepcs-ze-pt-29030"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -366,10 +409,13 @@ servers:
   - key: "ze_pt_4"
     container_name: "kepcs-ze-pt-29040"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -405,10 +451,13 @@ servers:
   - key: "ze_pt_5"
     container_name: "kepcs-ze-pt-29050"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -444,10 +493,13 @@ servers:
   - key: "ze_pt_6"
     container_name: "kepcs-ze-pt-29060"
     image: "steamrt3:latest"
-    groups: ["all", "ze_pt"]
+    groups: ["ze_pt"]
+    start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -488,6 +540,8 @@ servers:
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"
@@ -525,6 +579,8 @@ servers:
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
     tty: true
+    working_dir: null
+    network_mode: null
     command:
       - "bash"
       - "-lc"

@@ -470,5 +470,111 @@ class BatchStartIntervalTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["message"], "kepcs-ze-xl-28010 recreated")
 
 
+class RconPasswordTests(unittest.TestCase):
+    def test_uses_payload_password_for_rcon(self) -> None:
+        calls: list[tuple[str, int, str, int, str]] = []
+
+        class FakeClient:
+            def __init__(self, host: str, port: int, *, passwd: str, timeout: int) -> None:
+                self.host = host
+                self.port = port
+                self.passwd = passwd
+                self.timeout = timeout
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb) -> None:
+                return None
+
+            def run(self, command: str) -> str:
+                calls.append((self.host, self.port, self.passwd, self.timeout, command))
+                return "ok"
+
+        original_rcon = sys.modules.get("rcon")
+        sys.modules["rcon"] = types.SimpleNamespace(Client=FakeClient)
+        try:
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime.config = SimpleNamespace(rcon_host="127.0.0.1", rcon_timeout_seconds=5)
+            runtime._raise_if_cancel_requested = lambda: None
+            runtime._server_primary_port = lambda _server: 27015
+            runtime._servers_for_keys = lambda keys: [
+                SimpleNamespace(key=key)
+                for key in keys
+            ]
+
+            result = runtime.send_rcon_command(
+                "ALL",
+                "status",
+                server_keys=["ze_xl_1"],
+                targets=[{"key": "ze_xl_1", "password": "db-secret"}],
+            )
+        finally:
+            if original_rcon is None:
+                sys.modules.pop("rcon", None)
+            else:
+                sys.modules["rcon"] = original_rcon
+
+        self.assertEqual(calls, [("127.0.0.1", 27015, "db-secret", 5, "status")])
+        self.assertEqual(result["success"], 1)
+
+    def test_missing_payload_password_reports_empty(self) -> None:
+        class FakeClient:
+            def __init__(self, *_args, **_kwargs) -> None:
+                raise AssertionError("RCON client should not be created without a password")
+
+        original_rcon = sys.modules.get("rcon")
+        sys.modules["rcon"] = types.SimpleNamespace(Client=FakeClient)
+        try:
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime.config = SimpleNamespace(rcon_host="127.0.0.1", rcon_timeout_seconds=5)
+            runtime._raise_if_cancel_requested = lambda: None
+            runtime._server_primary_port = lambda _server: 27015
+            runtime._servers_for_keys = lambda keys: [
+                SimpleNamespace(key=key)
+                for key in keys
+            ]
+
+            result = runtime.send_rcon_command(
+                "ALL",
+                "status",
+                server_keys=["ze_xl_1"],
+                targets=[{"key": "ze_xl_1"}],
+            )
+        finally:
+            if original_rcon is None:
+                sys.modules.pop("rcon", None)
+            else:
+                sys.modules["rcon"] = original_rcon
+
+        self.assertEqual(result["success"], 0)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["results"][0]["error"], "RCON password is empty")
+
+    def test_targets_without_server_keys_are_not_used_as_target_source(self) -> None:
+        original_rcon = sys.modules.get("rcon")
+        sys.modules["rcon"] = types.SimpleNamespace(Client=object)
+        try:
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime._servers_for_keys = lambda _keys: (_ for _ in ()).throw(
+                AssertionError("targets should not be used as server key compatibility input")
+            )
+
+            result = runtime.send_rcon_command(
+                "ALL",
+                "status",
+                targets=[{"key": "ze_xl_1", "password": "db-secret"}],
+            )
+        finally:
+            if original_rcon is None:
+                sys.modules.pop("rcon", None)
+            else:
+                sys.modules["rcon"] = original_rcon
+
+        self.assertEqual(result["total"], 0)
+        self.assertEqual(result["success"], 0)
+        self.assertEqual(result["failed"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
