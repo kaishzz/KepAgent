@@ -25,7 +25,7 @@ KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制
 - 轮询、领取、执行并回传节点命令
 - 回传执行日志和结果摘要
 - 管理 CS2 Docker 容器
-- 按单个 `key` 或批量 `serverKeys` 处理服务器启动、停止、重启和删除命令
+- 按单个 `key` 或批量 `serverKeys` 处理服务器启动、停止、重启和删除命令；批量启动会按配置间隔逐台拉起
 - 发送 RCON 命令
 - 执行 `steamcmd app_update ... validate`
 - 执行单监控服或多模式崩溃检查，并在对应模式检查成功后启动该模式配置的服务器
@@ -63,6 +63,7 @@ cp .env.example .env
 - `KEPAGENT_API_BASE_URL`
 - `KEPAGENT_API_KEY`
 - `KEPAGENT_RCON_PASSWORD`
+- `KEPAGENT_BATCH_START_INTERVAL_SECONDS`
 
 ### 2. 节点配置
 
@@ -75,6 +76,7 @@ cp agent.example.yaml agent.yaml
 - 服务器键值与容器名
 - 镜像、端口、挂载、环境变量
 - 分组与分组显示名
+- 批量启动间隔秒数
 - `monitor_server_key`
 - RCON 兜底密码
 - 监控轮询、稳定时长和恢复超时
@@ -128,7 +130,7 @@ python3 main.py --version
 
 - `node.check_update`：先尝试比对本地和远端 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
 - `node.check_validate`：直接停服并执行 `validate`；如果本地没有 manifest，会先打印“没有 manifest”再继续
-- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；重启会先强制删除容器再按配置重新创建启动
+- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；两台及以上批量启动时按 `batch_start_interval_seconds` 逐台启动，批量停止不等待，批量重启会先强制删除选中的容器再按启动间隔逐台拉起
 - `node.monitor_check`：只运行崩溃检查，不自动启动其它服务器；配置了 `monitor_profiles` 时会按 profile 逐个检查
 - `node.monitor_start`：监控通过后启动 YAML 中配置的目标；配置了 `monitor_profiles` 时各模式独立检查，某个模式失败只会阻止该模式启动，不影响其它已通过模式
 - `monitor_profiles[].monitor_server_key` 指定该模式用于崩溃检查的服务器，例如 `ze_xl_1`、`ze_pt_1`

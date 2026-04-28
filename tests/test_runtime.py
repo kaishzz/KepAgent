@@ -21,6 +21,7 @@ if "docker" not in sys.modules:
     sys.modules["docker"] = docker_module
     sys.modules["docker.errors"] = errors_module
 
+from kepagent import runtime as runtime_module
 from kepagent.runtime import DockerRuntime
 
 
@@ -340,6 +341,133 @@ class RestartServerTests(unittest.TestCase):
         self.assertTrue(result["changed"])
         self.assertTrue(result["removed"])
         self.assertEqual(result["message"], "kepcs-ze-xl-28010 recreated")
+
+
+class BatchStartIntervalTests(unittest.TestCase):
+    def test_batch_start_waits_between_selected_servers(self) -> None:
+        calls: list[tuple[str, object]] = []
+        logs: list[str] = []
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(batch_start_interval_seconds=2)
+        runtime._servers_for_keys = lambda keys: [SimpleNamespace(key=key) for key in keys]
+        runtime._raise_if_cancel_requested = lambda: None
+        runtime._emit_log = lambda message, level="info": logs.append(message)
+        runtime.start_server = lambda key: calls.append(("start", key)) or {
+            "changed": True,
+            "message": f"{key} started",
+        }
+
+        original_sleep = runtime_module.time.sleep
+        runtime_module.time.sleep = lambda seconds: calls.append(("sleep", seconds))
+        try:
+            result = DockerRuntime.start_servers(runtime, ["ze_xl_1", "ze_xl_2", "ze_xl_3"])
+        finally:
+            runtime_module.time.sleep = original_sleep
+
+        self.assertEqual(
+            calls,
+            [
+                ("start", "ze_xl_1"),
+                ("sleep", 1),
+                ("sleep", 1),
+                ("start", "ze_xl_2"),
+                ("sleep", 1),
+                ("sleep", 1),
+                ("start", "ze_xl_3"),
+            ],
+        )
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(
+            logs,
+            [
+                "Waiting 2s before starting next server ze_xl_2",
+                "Waiting 2s before starting next server ze_xl_3",
+            ],
+        )
+
+    def test_single_start_and_batch_stop_do_not_wait(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(batch_start_interval_seconds=30)
+        runtime._servers_for_keys = lambda keys: [SimpleNamespace(key=key) for key in keys]
+        runtime._raise_if_cancel_requested = lambda: None
+        runtime._emit_log = lambda _message, level="info": None
+        runtime.start_server = lambda key: calls.append(("start", key)) or {
+            "changed": True,
+            "message": f"{key} started",
+        }
+        runtime.stop_server = lambda key: calls.append(("stop", key)) or {
+            "changed": True,
+            "message": f"{key} stopped",
+        }
+
+        original_sleep = runtime_module.time.sleep
+        runtime_module.time.sleep = lambda seconds: calls.append(("sleep", seconds))
+        try:
+            DockerRuntime.start_servers(runtime, ["ze_xl_1"])
+            DockerRuntime.stop_servers(runtime, ["ze_xl_1", "ze_xl_2"])
+        finally:
+            runtime_module.time.sleep = original_sleep
+
+        self.assertEqual(
+            calls,
+            [
+                ("start", "ze_xl_1"),
+                ("stop", "ze_xl_1"),
+                ("stop", "ze_xl_2"),
+            ],
+        )
+
+    def test_batch_restart_removes_all_before_delayed_starts(self) -> None:
+        calls: list[tuple[str, object]] = []
+        servers = [
+            SimpleNamespace(key="ze_xl_1", container_name="kepcs-ze-xl-28010"),
+            SimpleNamespace(key="ze_xl_2", container_name="kepcs-ze-xl-28020"),
+        ]
+
+        class FakeContainer:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def remove(self, force: bool = False) -> None:
+                calls.append((f"remove:{self.name}", force))
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(batch_start_interval_seconds=2)
+        runtime._servers_for_keys = lambda _keys: servers
+        runtime._raise_if_cancel_requested = lambda: None
+        runtime._emit_log = lambda _message, level="info": None
+        runtime._get_container = lambda name: calls.append(("get_container", name)) or FakeContainer(name)
+        runtime.start_server = lambda key: calls.append(("start", key)) or {
+            "changed": True,
+            "message": f"{key} started",
+        }
+
+        original_sleep = runtime_module.time.sleep
+        runtime_module.time.sleep = lambda seconds: calls.append(("sleep", seconds))
+        try:
+            result = DockerRuntime.restart_servers(runtime, ["ze_xl_1", "ze_xl_2"])
+        finally:
+            runtime_module.time.sleep = original_sleep
+
+        self.assertEqual(
+            calls,
+            [
+                ("get_container", "kepcs-ze-xl-28010"),
+                ("remove:kepcs-ze-xl-28010", True),
+                ("get_container", "kepcs-ze-xl-28020"),
+                ("remove:kepcs-ze-xl-28020", True),
+                ("start", "ze_xl_1"),
+                ("sleep", 1),
+                ("sleep", 1),
+                ("start", "ze_xl_2"),
+            ],
+        )
+        self.assertEqual(result["changed"], 2)
+        self.assertTrue(result["results"][0]["removed"])
+        self.assertEqual(result["results"][0]["message"], "kepcs-ze-xl-28010 recreated")
 
 
 if __name__ == "__main__":

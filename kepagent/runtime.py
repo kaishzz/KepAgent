@@ -103,6 +103,29 @@ class DockerRuntime:
         except NotFound:
             return None
 
+    def _batch_start_interval_seconds(self, server_count: int) -> int:
+        if server_count < 2:
+            return 0
+
+        return max(0, int(getattr(self.config, "batch_start_interval_seconds", 30) or 0))
+
+    def _wait_before_next_batch_start(self, servers: list[ServerDefinition], index: int) -> None:
+        if index >= len(servers) - 1:
+            return
+
+        interval_seconds = self._batch_start_interval_seconds(len(servers))
+        if interval_seconds <= 0:
+            return
+
+        next_server = servers[index + 1]
+        self._emit_log(
+            f"Waiting {interval_seconds}s before starting next server {next_server.key}"
+        )
+        for _second in range(interval_seconds):
+            self._raise_if_cancel_requested()
+            time.sleep(1)
+        self._raise_if_cancel_requested()
+
     def set_cancel_reader(self, reader: Callable[[], dict[str, Any] | None] | None) -> None:
         self._cancel_reader = reader
 
@@ -559,68 +582,90 @@ class DockerRuntime:
     def remove_servers(self, server_keys: list[str]) -> dict[str, Any]:
         return self._run_servers("remove", server_keys)
 
-    def _run_group(self, group: str, action: str) -> dict[str, Any]:
-        servers = self.get_group(group)
+    def _run_server_action_list(self, action: str, servers: list[ServerDefinition]) -> dict[str, Any]:
+        if action == "restart":
+            return self._restart_server_action_list(servers)
+
         results = []
         changed = 0
 
-        for server in servers:
+        for index, server in enumerate(servers):
             self._raise_if_cancel_requested()
             method = getattr(self, f"{action}_server")
             result = method(server.key)
             results.append(result)
             if result.get("changed"):
                 changed += 1
+            if action == "start":
+                self._wait_before_next_batch_start(servers, index)
 
         return {
-            "group": group,
-            "action": action,
             "changed": changed,
             "total": len(results),
             "results": results,
         }
 
-    def _run_servers(self, action: str, server_keys: list[str]) -> dict[str, Any]:
-        servers = self._servers_for_keys(server_keys)
-        results = []
-        changed = 0
+    def _restart_server_action_list(self, servers: list[ServerDefinition]) -> dict[str, Any]:
+        removed_by_key = {}
 
         for server in servers:
             self._raise_if_cancel_requested()
-            method = getattr(self, f"{action}_server")
-            result = method(server.key)
+            container = self._get_container(server.container_name)
+            if container:
+                container.remove(force=True)
+                removed_by_key[server.key] = True
+                continue
+
+            removed_by_key[server.key] = False
+
+        results = []
+        changed = 0
+
+        for index, server in enumerate(servers):
+            self._raise_if_cancel_requested()
+            result = self.start_server(server.key)
+            result["changed"] = True
+            result["removed"] = removed_by_key.get(server.key, False)
+            result["message"] = f"{server.container_name} recreated"
             results.append(result)
-            if result.get("changed"):
-                changed += 1
+            changed += 1
+            self._wait_before_next_batch_start(servers, index)
+
+        return {
+            "changed": changed,
+            "total": len(results),
+            "results": results,
+        }
+
+    def _run_group(self, group: str, action: str) -> dict[str, Any]:
+        servers = self.get_group(group)
+        result = self._run_server_action_list(action, servers)
+
+        return {
+            "group": group,
+            "action": action,
+            **result,
+        }
+
+    def _run_servers(self, action: str, server_keys: list[str]) -> dict[str, Any]:
+        servers = self._servers_for_keys(server_keys)
+        result = self._run_server_action_list(action, servers)
 
         return {
             "scope": "servers",
             "action": action,
             "serverKeys": [server.key for server in servers],
-            "changed": changed,
-            "total": len(results),
-            "results": results,
-            "message": f"Batch {action} handled {len(results)} servers, changed {changed}",
+            **result,
+            "message": f"Batch {action} handled {result['total']} servers, changed {result['changed']}",
         }
 
     def _run_all(self, action: str) -> dict[str, Any]:
-        results = []
-        changed = 0
-
-        for server in self.config.servers:
-            self._raise_if_cancel_requested()
-            method = getattr(self, f"{action}_server")
-            result = method(server.key)
-            results.append(result)
-            if result.get("changed"):
-                changed += 1
+        result = self._run_server_action_list(action, list(self.config.servers))
 
         return {
             "group": "ALL",
             "action": action,
-            "changed": changed,
-            "total": len(results),
-            "results": results,
+            **result,
         }
 
     def start_group(self, group: str) -> dict[str, Any]:

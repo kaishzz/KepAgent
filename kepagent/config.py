@@ -55,6 +55,7 @@ class AgentConfig(BaseModel):
     poll_interval_seconds: int = 3
     heartbeat_interval_seconds: int = 5
     request_timeout_seconds: int = 15
+    batch_start_interval_seconds: int = Field(default=30, ge=0)
     docker_base_url: str | None = None
     group_labels: dict[str, str] = Field(default_factory=dict)
     group_order: list[str] = Field(default_factory=list)
