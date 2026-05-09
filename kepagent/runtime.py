@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import queue
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -17,12 +18,20 @@ from .config import AgentConfig, MonitorProfile, PortBinding, ServerDefinition, 
 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+A2S_INFO_REQUEST = b"\xFF\xFF\xFF\xFFTSource Engine Query\x00"
 
 
 class CommandCancelled(RuntimeError):
     def __init__(self, message: str, *, force: bool = False) -> None:
         super().__init__(message)
         self.force = force
+
+
+def _read_null_terminated_string(payload: bytes, offset: int) -> tuple[str, int]:
+    end = payload.find(b"\x00", offset)
+    if end < 0:
+        return "", len(payload)
+    return payload[offset:end].decode("utf-8", errors="ignore"), end + 1
 
 
 class DockerRuntime:
@@ -37,6 +46,80 @@ class DockerRuntime:
         self._groups = self._build_groups(config.servers)
         self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
         self._log_emitter: Callable[[str, str], None] | None = None
+
+    def _query_server_info(self, server: ServerDefinition) -> dict[str, Any] | None:
+        if not getattr(self.config, "server_query_enabled", True):
+            return None
+
+        host = str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1"
+        port = self._server_query_port(server)
+        timeout_seconds = max(1, int(getattr(self.config, "server_query_timeout_seconds", 2) or 2))
+
+        challenge = None
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout_seconds)
+
+            for _attempt in range(2):
+                request = A2S_INFO_REQUEST
+                if challenge is not None:
+                    request += challenge
+
+                sock.sendto(request, (host, port))
+                packet, _address = sock.recvfrom(4096)
+                if len(packet) < 5 or not packet.startswith(b"\xFF\xFF\xFF\xFF"):
+                    raise RuntimeError("Invalid A2S response header")
+
+                packet_type = packet[4]
+
+                if packet_type == 0x49:
+                    return self._parse_a2s_info_response(packet[5:])
+
+                if packet_type == 0x41:
+                    challenge = packet[5:9]
+                    continue
+
+                raise RuntimeError(f"Unsupported A2S response type: {packet_type}")
+
+        return None
+
+    @staticmethod
+    def _parse_a2s_info_response(payload: bytes) -> dict[str, Any]:
+        offset = 0
+        if len(payload) < 6:
+            raise RuntimeError("A2S info payload too short")
+
+        _protocol = payload[offset]
+        offset += 1
+        server_name, offset = _read_null_terminated_string(payload, offset)
+        map_name, offset = _read_null_terminated_string(payload, offset)
+        _folder, offset = _read_null_terminated_string(payload, offset)
+        _game, offset = _read_null_terminated_string(payload, offset)
+
+        if offset + 7 > len(payload):
+            raise RuntimeError("A2S info payload truncated")
+
+        offset += 2  # app id
+        players = payload[offset]
+        offset += 1
+        max_players = payload[offset]
+        offset += 1
+        _bots = payload[offset]
+        offset += 1
+        _server_type = payload[offset]
+        offset += 1
+        _environment = payload[offset]
+        offset += 1
+        visibility = payload[offset]
+        offset += 1
+        _vac = payload[offset] if offset < len(payload) else 0
+
+        return {
+            "serverName": server_name.strip(),
+            "map": map_name.strip(),
+            "currentPlayers": int(players),
+            "maxPlayers": int(max_players),
+            "visibility": int(visibility),
+        }
 
     @staticmethod
     def _build_groups(servers: list[ServerDefinition]) -> dict[str, list[ServerDefinition]]:
@@ -442,41 +525,67 @@ class DockerRuntime:
             "stoppedEarly": stopped_early,
         }
 
-    def _server_primary_port(self, server: ServerDefinition) -> int:
+    @staticmethod
+    def _pick_server_port(server: ServerDefinition, preferred_protocol: str) -> int:
         if not server.ports:
             raise RuntimeError(f"Server {server.key} has no host port configured")
 
-        tcp_port = next((item.host_port for item in server.ports if item.protocol.lower() == "tcp"), None)
-        return int(tcp_port or server.ports[0].host_port)
+        preferred_port = next(
+            (item.host_port for item in server.ports if item.protocol.lower() == preferred_protocol.lower()),
+            None,
+        )
+        return int(preferred_port or server.ports[0].host_port)
+
+    def _server_query_port(self, server: ServerDefinition) -> int:
+        return self._pick_server_port(server, "udp")
+
+    def _server_primary_port(self, server: ServerDefinition) -> int:
+        return self._pick_server_port(server, "tcp")
 
     def inspect_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
         container = self._get_container(server.container_name)
+        primary_port = self._server_query_port(server)
+        base_payload = {
+            "key": server.key,
+            "containerName": server.container_name,
+            "groups": server.groups,
+            "primaryPort": primary_port,
+            "host": str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1",
+            "mode": str(server.labels.get("kepcs.mode") or "").strip(),
+            "name": str(server.labels.get("kepcs.server_key") or server.key).strip(),
+        }
 
         if not container:
             return {
-                "key": server.key,
-                "containerName": server.container_name,
+                **base_payload,
                 "state": "missing",
                 "status": "missing",
-                "groups": server.groups,
                 "image": server.image,
-                "primaryPort": self._server_primary_port(server),
             }
 
         container.reload()
         state = container.attrs.get("State", {})
-        return {
-            "key": server.key,
-            "containerName": server.container_name,
+        payload = {
+            **base_payload,
             "state": state.get("Status", container.status),
             "status": container.status,
             "id": container.id,
-            "groups": server.groups,
             "image": container.image.tags or [server.image],
-            "primaryPort": self._server_primary_port(server),
             "restartCount": int(state.get("RestartCount") or 0),
         }
+
+        try:
+            query_info = self._query_server_info(server)
+        except Exception as exc:  # noqa: BLE001
+            query_info = {
+                "queryError": str(exc),
+            }
+
+        if isinstance(query_info, dict):
+            payload.update(query_info)
+
+        return payload
 
     def list_servers(self) -> list[dict[str, Any]]:
         return [self.inspect_server(server.key) for server in self.config.servers]

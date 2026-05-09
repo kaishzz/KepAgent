@@ -87,6 +87,97 @@ AppID : 730, change number : 35356215/0, last change : Tue Apr 21 13:02:26 2026
         self.assertIsNone(DockerRuntime._extract_remote_buildid_from_appinfo(output))
 
 
+class QueryServerInfoTests(unittest.TestCase):
+    def test_server_query_port_prefers_udp(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        server = SimpleNamespace(
+            key="ze_xl_1",
+            ports=[
+                SimpleNamespace(host_port=28010, protocol="tcp"),
+                SimpleNamespace(host_port=28010, protocol="udp"),
+            ],
+        )
+
+        self.assertEqual(runtime._server_query_port(server), 28010)
+        self.assertEqual(runtime._server_primary_port(server), 28010)
+
+    def test_server_query_port_falls_back_when_udp_is_missing(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        server = SimpleNamespace(
+            key="ze_xl_1",
+            ports=[
+                SimpleNamespace(host_port=28010, protocol="tcp"),
+            ],
+        )
+
+        self.assertEqual(runtime._server_query_port(server), 28010)
+        self.assertEqual(runtime._server_primary_port(server), 28010)
+
+    def test_parses_a2s_info_response(self) -> None:
+        payload = (
+            b"\x11"
+            + b"KepCs ZE\x00"
+            + b"ze_example\x00"
+            + b"csgo\x00"
+            + b"Counter-Strike 2\x00"
+            + (730).to_bytes(2, "little")
+            + bytes([12, 64, 0])
+            + b"d"
+            + b"l"
+            + bytes([0, 1])
+        )
+
+        result = DockerRuntime._parse_a2s_info_response(payload)
+
+        self.assertEqual(result["serverName"], "KepCs ZE")
+        self.assertEqual(result["map"], "ze_example")
+        self.assertEqual(result["currentPlayers"], 12)
+        self.assertEqual(result["maxPlayers"], 64)
+
+    def test_inspect_server_includes_query_info(self) -> None:
+        class FakeContainer:
+            status = "running"
+            id = "container-1"
+            image = SimpleNamespace(tags=["steamrt3:latest"])
+            attrs = {"State": {"Status": "running", "RestartCount": 1}}
+
+            def reload(self) -> None:
+                return None
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_host="127.0.0.1",
+            server_query_enabled=True,
+            server_query_timeout_seconds=2,
+        )
+        runtime.get_server = lambda _key: SimpleNamespace(
+            key="ze_xl_1",
+            container_name="kepcs-ze-xl-28010",
+            groups=["ze_xl"],
+            image="steamrt3:latest",
+            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+        )
+        runtime._get_container = lambda _name: FakeContainer()
+        runtime._server_query_port = lambda _server: 28010
+        runtime._query_server_info = lambda _server: {
+            "serverName": "KepCs ZE",
+            "map": "ze_example",
+            "currentPlayers": 12,
+            "maxPlayers": 64,
+            "visibility": 0,
+        }
+
+        result = DockerRuntime.inspect_server(runtime, "ze_xl_1")
+
+        self.assertEqual(result["primaryPort"], 28010)
+        self.assertEqual(result["host"], "127.0.0.1")
+        self.assertEqual(result["mode"], "ze_xl")
+        self.assertEqual(result["serverName"], "KepCs ZE")
+        self.assertEqual(result["map"], "ze_example")
+        self.assertEqual(result["currentPlayers"], 12)
+        self.assertEqual(result["maxPlayers"], 64)
+
+
 class CleanupSteamappsBeforeValidateTests(unittest.TestCase):
     def test_removes_manifest_and_transient_steamapps_directories(self) -> None:
         logs: list[tuple[str, str]] = []
