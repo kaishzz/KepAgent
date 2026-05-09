@@ -153,6 +153,7 @@ class QueryServerInfoTests(unittest.TestCase):
         )
         runtime.get_server = lambda _key: SimpleNamespace(
             key="ze_xl_1",
+            catalog_server_id="catalog-1",
             container_name="kepcs-ze-xl-28010",
             groups=["ze_xl"],
             image="steamrt3:latest",
@@ -171,6 +172,7 @@ class QueryServerInfoTests(unittest.TestCase):
         result = DockerRuntime.inspect_server(runtime, "ze_xl_1")
 
         self.assertEqual(result["primaryPort"], 28010)
+        self.assertEqual(result["catalogServerId"], "catalog-1")
         self.assertEqual(result["host"], "127.0.0.1")
         self.assertEqual(result["mode"], "ze_xl")
         self.assertEqual(result["serverName"], "KepCs ZE")
@@ -187,6 +189,7 @@ class QueryServerInfoTests(unittest.TestCase):
             servers=[
                 SimpleNamespace(
                     key="ze_xl_1",
+                    catalog_server_id="catalog-1",
                     container_name="kepcs-ze-xl-28010",
                     groups=["ze_xl"],
                     image="steamrt3:latest",
@@ -210,6 +213,7 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(refresh_calls, [False])
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "pending")
+        self.assertEqual(rows[0]["catalogServerId"], "catalog-1")
         self.assertTrue(rows[0]["queryPending"])
         self.assertTrue(rows[0]["queryStale"])
 
@@ -221,6 +225,7 @@ class QueryServerInfoTests(unittest.TestCase):
             servers=[
                 SimpleNamespace(
                     key="ze_xl_1",
+                    catalog_server_id="catalog-1",
                     container_name="kepcs-ze-xl-28010",
                     groups=["ze_xl"],
                     image="steamrt3:latest",
@@ -233,6 +238,7 @@ class QueryServerInfoTests(unittest.TestCase):
         runtime._server_snapshots = {
             "ze_xl_1": {
                 "key": "ze_xl_1",
+                "catalogServerId": "catalog-1",
                 "status": "running",
                 "serverName": "KepCs ZE",
                 "_refreshedAtMonotonic": time.monotonic(),
@@ -249,8 +255,26 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(refresh_calls, [False])
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "running")
+        self.assertEqual(rows[0]["catalogServerId"], "catalog-1")
         self.assertEqual(rows[0]["serverName"], "KepCs ZE")
         self.assertNotIn("_refreshedAtMonotonic", rows[0])
+
+    def test_build_summary_uses_provided_servers_without_refreshing_list(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(servers=[object(), object(), object()])
+        runtime.list_servers = lambda: (_ for _ in ()).throw(AssertionError("list_servers should not be called"))
+
+        summary = DockerRuntime.build_summary(runtime, [
+            {"state": "running"},
+            {"state": "missing"},
+            {"state": "exited"},
+        ])
+
+        self.assertEqual(summary, {
+            "configuredServers": 3,
+            "runningServers": 1,
+            "missingServers": 1,
+        })
 
 
 class CleanupSteamappsBeforeValidateTests(unittest.TestCase):

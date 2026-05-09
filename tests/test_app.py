@@ -228,5 +228,32 @@ class ServerActionHandlerTests(unittest.TestCase):
         self.assertEqual(result["logs"], ["ze_xl_1 restarted"])
 
 
+class HeartbeatPayloadTests(unittest.TestCase):
+    def test_build_heartbeat_payload_reuses_single_server_snapshot(self) -> None:
+        class FakeRuntime:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, object]] = []
+
+            def list_servers(self):
+                self.calls.append(("list_servers", None))
+                return [{"key": "ze_xl_1", "state": "running"}]
+
+            def build_summary(self, servers=None):
+                self.calls.append(("build_summary", servers))
+                return {"configuredServers": 1, "runningServers": 1, "missingServers": 0}
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.config = types.SimpleNamespace(group_labels={"ze_xl": "训练服"}, group_order=["ze_xl"])
+        app.runtime = FakeRuntime()
+
+        payload = app.build_heartbeat_payload()
+
+        self.assertEqual(payload["servers"], [{"key": "ze_xl_1", "state": "running"}])
+        self.assertEqual(payload["summary"]["runningServers"], 1)
+        self.assertEqual(app.runtime.calls[0], ("list_servers", None))
+        self.assertEqual(app.runtime.calls[1][0], "build_summary")
+        self.assertIs(app.runtime.calls[1][1], payload["servers"])
+
+
 if __name__ == "__main__":
     unittest.main()

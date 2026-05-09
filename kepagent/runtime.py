@@ -76,6 +76,7 @@ class DockerRuntime:
         primary_port = self._server_query_port(server)
         return {
             "key": server.key,
+            "catalogServerId": str(server.catalog_server_id or "").strip() or None,
             "containerName": server.container_name,
             "groups": server.groups,
             "primaryPort": primary_port,
@@ -990,13 +991,13 @@ class DockerRuntime:
             ),
         }
 
-    def build_summary(self) -> dict[str, Any]:
-        servers = self.list_servers()
-        running = sum(1 for item in servers if item["state"] == "running")
+    def build_summary(self, servers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        safe_servers = servers if isinstance(servers, list) else self.list_servers()
+        running = sum(1 for item in safe_servers if item["state"] == "running")
         return {
             "configuredServers": len(self.config.servers),
             "runningServers": running,
-            "missingServers": sum(1 for item in servers if item["state"] == "missing"),
+            "missingServers": sum(1 for item in safe_servers if item["state"] == "missing"),
         }
 
     def send_rcon_command(

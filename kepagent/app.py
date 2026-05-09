@@ -102,16 +102,17 @@ class KepAgentApp:
             )
 
     def build_heartbeat_payload(self) -> dict[str, Any]:
+        servers = self.runtime.list_servers()
         return {
             "agentVersion": AGENT_VERSION,
             "hostname": socket.gethostname(),
             "platform": f"{platform.system()} {platform.release()}",
             "capabilities": list(SUPPORTED_COMMANDS),
-            "summary": self.runtime.build_summary(),
+            "summary": self.runtime.build_summary(servers),
             "stats": {
                 "pythonVersion": platform.python_version(),
             },
-            "servers": self.runtime.list_servers(),
+            "servers": servers,
             "metadata": {
                 "machine": platform.machine(),
                 "node": platform.node(),
@@ -350,12 +351,13 @@ class KepAgentApp:
         return self._ok_result(logs, {"pong": True})
 
     def _handle_list_servers(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
+        servers = self.runtime.list_servers()
         logs.append("Collected docker server list")
         return self._ok_result(
             logs,
             {
-                "summary": self.runtime.build_summary(),
-                "servers": self.runtime.list_servers(),
+                "summary": self.runtime.build_summary(servers),
+                "servers": servers,
             },
         )
 

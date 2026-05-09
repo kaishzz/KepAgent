@@ -25,6 +25,7 @@ class VolumeBinding(BaseModel):
 
 class ServerDefinition(BaseModel):
     key: str
+    catalog_server_id: str | None = None
     container_name: str
     image: str
     groups: list[str] = Field(default_factory=list)
