@@ -46,6 +46,113 @@ class DockerRuntime:
         self._groups = self._build_groups(config.servers)
         self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
         self._log_emitter: Callable[[str, str], None] | None = None
+        self._server_snapshots: dict[str, dict[str, Any]] = {}
+        self._server_snapshot_lock = threading.Lock()
+        self._server_refresh_in_flight = False
+        self._server_refresh_requested_at = 0.0
+
+    def _server_query_cache_ttl_seconds(self) -> int:
+        return max(1, int(getattr(self.config, "server_query_cache_ttl_seconds", 15) or 15))
+
+    def _snapshot_age_seconds(self, snapshot: dict[str, Any] | None, now: float | None = None) -> float | None:
+        if not isinstance(snapshot, dict):
+            return None
+
+        refreshed_at = snapshot.get("_refreshedAtMonotonic")
+        if not isinstance(refreshed_at, (int, float)):
+            return None
+
+        current = time.monotonic() if now is None else float(now)
+        return max(0.0, current - float(refreshed_at))
+
+    def _strip_snapshot_meta(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in snapshot.items()
+            if not str(key).startswith("_")
+        }
+
+    def _build_base_server_payload(self, server: ServerDefinition) -> dict[str, Any]:
+        primary_port = self._server_query_port(server)
+        return {
+            "key": server.key,
+            "containerName": server.container_name,
+            "groups": server.groups,
+            "primaryPort": primary_port,
+            "host": str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1",
+            "mode": str(server.labels.get("kepcs.mode") or "").strip(),
+            "name": str(server.labels.get("kepcs.server_key") or server.key).strip(),
+        }
+
+    def _snapshot_stale_payload(self, snapshot: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        age_seconds = self._snapshot_age_seconds(snapshot, now)
+        payload = self._strip_snapshot_meta(snapshot)
+        payload["queryStale"] = True
+        if age_seconds is not None:
+            payload["queryAgeSeconds"] = int(age_seconds)
+        return payload
+
+    def _build_pending_server_payload(self, server: ServerDefinition) -> dict[str, Any]:
+        payload = self._build_base_server_payload(server)
+        payload.update({
+            "state": "pending",
+            "status": "pending",
+            "queryStale": True,
+            "queryPending": True,
+            "image": server.image,
+        })
+        return payload
+
+    def _refresh_server_snapshots_worker(self) -> None:
+        try:
+            next_snapshots: dict[str, dict[str, Any]] = {}
+            for server in self.config.servers:
+                snapshot = self.inspect_server(server.key)
+                snapshot["_refreshedAtMonotonic"] = time.monotonic()
+                next_snapshots[server.key] = snapshot
+
+            with self._server_snapshot_lock:
+                self._server_snapshots = next_snapshots
+        finally:
+            with self._server_snapshot_lock:
+                self._server_refresh_in_flight = False
+
+    def refresh_server_snapshots_async(self, *, force: bool = False) -> bool:
+        if not getattr(self.config, "server_query_enabled", True):
+            return False
+
+        now = time.monotonic()
+        ttl_seconds = self._server_query_cache_ttl_seconds()
+
+        with self._server_snapshot_lock:
+            if self._server_refresh_in_flight:
+                return False
+
+            if not force and self._server_snapshots:
+                youngest_age = min(
+                    (
+                        age
+                        for age in (
+                            self._snapshot_age_seconds(snapshot, now)
+                            for snapshot in self._server_snapshots.values()
+                        )
+                        if age is not None
+                    ),
+                    default=None,
+                )
+                if youngest_age is not None and youngest_age < ttl_seconds:
+                    return False
+
+            self._server_refresh_in_flight = True
+            self._server_refresh_requested_at = now
+
+        worker = threading.Thread(
+            target=self._refresh_server_snapshots_worker,
+            name="kepagent-server-query-refresh",
+            daemon=True,
+        )
+        worker.start()
+        return True
 
     def _query_server_info(self, server: ServerDefinition) -> dict[str, Any] | None:
         if not getattr(self.config, "server_query_enabled", True):
@@ -545,16 +652,7 @@ class DockerRuntime:
     def inspect_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
         container = self._get_container(server.container_name)
-        primary_port = self._server_query_port(server)
-        base_payload = {
-            "key": server.key,
-            "containerName": server.container_name,
-            "groups": server.groups,
-            "primaryPort": primary_port,
-            "host": str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1",
-            "mode": str(server.labels.get("kepcs.mode") or "").strip(),
-            "name": str(server.labels.get("kepcs.server_key") or server.key).strip(),
-        }
+        base_payload = self._build_base_server_payload(server)
 
         if not container:
             return {
@@ -588,7 +686,35 @@ class DockerRuntime:
         return payload
 
     def list_servers(self) -> list[dict[str, Any]]:
-        return [self.inspect_server(server.key) for server in self.config.servers]
+        if not getattr(self.config, "server_query_enabled", True):
+            return [self.inspect_server(server.key) for server in self.config.servers]
+
+        self.refresh_server_snapshots_async()
+        now = time.monotonic()
+        ttl_seconds = self._server_query_cache_ttl_seconds()
+        snapshots_by_key = {}
+
+        with self._server_snapshot_lock:
+            snapshots_by_key = {
+                key: value.copy()
+                for key, value in self._server_snapshots.items()
+            }
+
+        rows: list[dict[str, Any]] = []
+        for server in self.config.servers:
+            snapshot = snapshots_by_key.get(server.key)
+            age_seconds = self._snapshot_age_seconds(snapshot, now)
+            if snapshot and age_seconds is not None and age_seconds <= ttl_seconds:
+                rows.append(self._strip_snapshot_meta(snapshot))
+                continue
+
+            if snapshot:
+                rows.append(self._snapshot_stale_payload(snapshot, now=now))
+                continue
+
+            rows.append(self._build_pending_server_payload(server))
+
+        return rows
 
     def start_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)

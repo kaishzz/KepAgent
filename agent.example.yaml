@@ -15,6 +15,7 @@ group_order: ["ze_xl", "ze_pt", "ze_test"]
 server_query_enabled: true
 server_query_host: "127.0.0.1"
 server_query_timeout_seconds: 2
+server_query_cache_ttl_seconds: 15
 rcon_host: "127.0.0.1"
 rcon_timeout_seconds: 5
 steamcmd_sh: "/data/steamcmd/steamcmd.sh"

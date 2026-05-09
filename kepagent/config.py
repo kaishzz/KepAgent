@@ -61,6 +61,7 @@ class AgentConfig(BaseModel):
     server_query_enabled: bool = True
     server_query_host: str = "127.0.0.1"
     server_query_timeout_seconds: int = 2
+    server_query_cache_ttl_seconds: int = 15
     rcon_host: str = "127.0.0.1"
     rcon_timeout_seconds: int = 5
     steamcmd_sh: str = "/data/steamcmd/steamcmd.sh"

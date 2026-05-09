@@ -1,6 +1,7 @@
 import unittest
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -176,6 +177,80 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(result["map"], "ze_example")
         self.assertEqual(result["currentPlayers"], 12)
         self.assertEqual(result["maxPlayers"], 64)
+
+    def test_list_servers_returns_pending_snapshot_while_async_refresh_runs(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_enabled=True,
+            server_query_cache_ttl_seconds=15,
+            server_query_host="127.0.0.1",
+            servers=[
+                SimpleNamespace(
+                    key="ze_xl_1",
+                    container_name="kepcs-ze-xl-28010",
+                    groups=["ze_xl"],
+                    image="steamrt3:latest",
+                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    ports=[SimpleNamespace(host_port=28010, protocol="udp")],
+                ),
+            ],
+        )
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {}
+        runtime._server_refresh_in_flight = False
+        runtime._server_refresh_requested_at = 0.0
+
+        refresh_calls: list[bool] = []
+        runtime.refresh_server_snapshots_async = lambda force=False: refresh_calls.append(force) or True
+        runtime.get_server = lambda key: runtime.config.servers[0]
+        runtime._server_query_port = lambda _server: 28010
+
+        rows = DockerRuntime.list_servers(runtime)
+
+        self.assertEqual(refresh_calls, [False])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "pending")
+        self.assertTrue(rows[0]["queryPending"])
+        self.assertTrue(rows[0]["queryStale"])
+
+    def test_list_servers_uses_cached_snapshot_without_blocking(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_enabled=True,
+            server_query_cache_ttl_seconds=15,
+            servers=[
+                SimpleNamespace(
+                    key="ze_xl_1",
+                    container_name="kepcs-ze-xl-28010",
+                    groups=["ze_xl"],
+                    image="steamrt3:latest",
+                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    ports=[SimpleNamespace(host_port=28010, protocol="udp")],
+                ),
+            ],
+        )
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {
+            "ze_xl_1": {
+                "key": "ze_xl_1",
+                "status": "running",
+                "serverName": "KepCs ZE",
+                "_refreshedAtMonotonic": time.monotonic(),
+            },
+        }
+        runtime._server_refresh_in_flight = False
+        runtime._server_refresh_requested_at = 0.0
+
+        refresh_calls: list[bool] = []
+        runtime.refresh_server_snapshots_async = lambda force=False: refresh_calls.append(force) or False
+
+        rows = DockerRuntime.list_servers(runtime)
+
+        self.assertEqual(refresh_calls, [False])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "running")
+        self.assertEqual(rows[0]["serverName"], "KepCs ZE")
+        self.assertNotIn("_refreshedAtMonotonic", rows[0])
 
 
 class CleanupSteamappsBeforeValidateTests(unittest.TestCase):
