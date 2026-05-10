@@ -1,4 +1,4 @@
-# KepAgent 0.4.0
+# KepAgent
 
 KepAgent 是部署在 Linux 节点上的执行端代理程序，负责与 KepCs 控制平面对接、上报节点状态，并执行 Docker、RCON、更新维护与崩溃检查命令
 
