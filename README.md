@@ -2,6 +2,8 @@
 
 KepAgent 是部署在 Linux 节点上的执行端代理程序，负责与 KepCs 控制平面对接、上报节点状态，并执行 Docker、RCON、更新维护与崩溃检查命令
 
+> 本项目大量使用 AI 技术，推荐使用 Codex 对本项目进行辅助开发
+
 配套控制平面仓库：
 
 - [https://github.com/kaishzz/kepcs.kaish.cn](https://github.com/kaishzz/kepcs.kaish.cn)
