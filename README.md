@@ -1,10 +1,10 @@
 # KepAgent 0.4.0
 
-KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制平面对接、上报节点状态，并执行 Docker、RCON、更新维护与崩溃检查命令。
+KepAgent 是部署在 Linux 节点上的执行端代理程序，负责与 KepCs 控制平面对接、上报节点状态，并执行 Docker、RCON、更新维护与崩溃检查命令
 
 配套控制平面仓库：
 
-- `E:\GitHubProjects\WebSite\kepcs.kaish.cn`
+- [https://github.com/kaishzz/kepcs.kaish.cn](https://github.com/kaishzz/kepcs.kaish.cn)
 
 ## 当前标识约定
 
@@ -20,7 +20,7 @@ KepAgent 是部署在 Linux 节点上的执行端 Agent，负责和 KepCs 控制
 
 ## 当前职责
 
-- 使用 Agent API Key 与控制平面鉴权
+- 使用 Agent API Key 与控制平面进行鉴权
 - 定时心跳上报节点信息
 - 轮询、领取、执行并回传节点命令
 - 回传执行日志和结果摘要
@@ -70,7 +70,7 @@ cp .env.example .env
 cp agent.example.yaml agent.yaml
 ```
 
-`agent.yaml` 当前负责描述：
+`agent.yaml` 当前用于描述：
 
 - 服务器键值与容器名
 - 镜像、端口、挂载、环境变量
@@ -80,7 +80,7 @@ cp agent.example.yaml agent.yaml
 - 监控轮询、稳定时长和恢复超时
 - `monitor_profiles` 多模式监控配置
 
-`agent.example.yaml` 和 `agent.example2.yaml` 会尽量显式写出 KepAgent 支持的配置字段。空字符串字段使用 `""`，可空 Docker 参数使用 `null`，列表和映射分别使用 `[]`、`{}`，方便复制后直接按节点情况填写。
+`agent.example.yaml` 和 `agent.example2.yaml` 会尽量显式写出 KepAgent 支持的全部配置字段。空字符串字段使用 `""`，可空 Docker 参数使用 `null`，列表和映射分别使用 `[]`、`{}`，方便复制后直接按节点情况填写
 
 多模式崩溃检查示例：
 
@@ -103,7 +103,7 @@ servers:
     start_after_monitor: false
 ```
 
-RCON 密码只使用控制平面命令 payload 透传的值；KepCs 控制台会从服务器目录数据库读取对应服务器的 RCON 密码后随命令下发。未下发密码的目标会在执行 RCON 时返回 `RCON password is empty`。
+RCON 密码只使用控制平面命令载荷（payload）透传的值；KepCs 控制台会从服务器目录数据库读取对应服务器的 RCON 密码后随命令下发。未下发密码的目标会在执行 RCON 时返回 `RCON password is empty`
 
 ## 运行
 
@@ -122,10 +122,10 @@ python3 main.py --version
 
 ## 关键行为
 
-- `node.check_update`：先尝试比对本地和远端 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
-- `node.check_validate`：直接停服并执行 `validate`；如果本地没有 manifest，会先打印“没有 manifest”再继续
-- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；两台及以上批量启动时按 `batch_start_interval_seconds` 逐台启动，批量停止不等待，批量重启会先强制删除选中的容器再按启动间隔逐台拉起
-- `node.monitor_check`：只运行崩溃检查，不自动启动其它服务器；配置了 `monitor_profiles` 时会按 profile 逐个检查
+- `node.check_update`：先尝试比对本地和远端 `buildid`；如果本地没有 `manifest`，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
+- `node.check_validate`：直接停服并执行 `validate`；如果本地没有 `manifest`，会先打印“没有 manifest”再继续
+- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；两台及以上批量启动时按 `batch_start_interval_seconds` 逐台启动，批量停止时不等待，批量重启会先强制删除选中的容器，再按启动间隔逐台拉起
+- `node.monitor_check`：只运行崩溃检查，不自动启动其它服务器；配置了 `monitor_profiles` 时会按各个模式配置逐项检查
 - `node.monitor_start`：监控通过后启动 YAML 中配置的目标；配置了 `monitor_profiles` 时各模式独立检查，某个模式失败只会阻止该模式启动，不影响其它已通过模式
 - `monitor_profiles[].monitor_server_key` 指定该模式用于崩溃检查的服务器，例如 `ze_xl_1`、`ze_pt_1`
 - `monitor_profiles[].start_server_keys` 可显式指定该模式检查成功后启动哪些服务器；不填写时默认启动同名分组里 `start_after_monitor: true` 的服务器
