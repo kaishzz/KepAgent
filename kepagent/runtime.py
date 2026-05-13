@@ -98,6 +98,8 @@ class DockerRuntime:
         payload.update({
             "state": "pending",
             "status": "pending",
+            "containerStatus": "pending",
+            "agentA2sStatus": "pending",
             "queryStale": True,
             "queryPending": True,
             "image": server.image,
@@ -650,6 +652,12 @@ class DockerRuntime:
     def _server_primary_port(self, server: ServerDefinition) -> int:
         return self._pick_server_port(server, "tcp")
 
+    @staticmethod
+    def _agent_a2s_status_from_error(error: Exception) -> str:
+        if isinstance(error, (socket.timeout, TimeoutError)):
+            return "timeout"
+        return "error"
+
     def inspect_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
         container = self._get_container(server.container_name)
@@ -660,25 +668,41 @@ class DockerRuntime:
                 **base_payload,
                 "state": "missing",
                 "status": "missing",
+                "containerStatus": "missing",
+                "agentA2sStatus": "unknown",
                 "image": server.image,
             }
 
         container.reload()
         state = container.attrs.get("State", {})
+        container_status = str(state.get("Status") or container.status or "").strip().lower() or "unknown"
         payload = {
             **base_payload,
             "state": state.get("Status", container.status),
             "status": container.status,
+            "containerStatus": container_status,
+            "agentA2sStatus": "unknown",
             "id": container.id,
             "image": container.image.tags or [server.image],
             "restartCount": int(state.get("RestartCount") or 0),
         }
 
+        if container_status != "running":
+            return payload
+
         try:
             query_info = self._query_server_info(server)
         except Exception as exc:  # noqa: BLE001
             query_info = {
+                "agentA2sStatus": self._agent_a2s_status_from_error(exc),
+                "agentA2sError": str(exc),
                 "queryError": str(exc),
+            }
+        else:
+            query_info = {
+                **(query_info or {}),
+                "agentA2sStatus": "ok",
+                "agentA2sError": None,
             }
 
         if isinstance(query_info, dict):

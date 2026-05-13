@@ -175,10 +175,116 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(result["catalogServerId"], "catalog-1")
         self.assertEqual(result["host"], "127.0.0.1")
         self.assertEqual(result["mode"], "ze_xl")
+        self.assertEqual(result["containerStatus"], "running")
+        self.assertEqual(result["agentA2sStatus"], "ok")
+        self.assertIsNone(result["agentA2sError"])
         self.assertEqual(result["serverName"], "KepCs ZE")
         self.assertEqual(result["map"], "ze_example")
         self.assertEqual(result["currentPlayers"], 12)
         self.assertEqual(result["maxPlayers"], 64)
+
+    def test_inspect_server_marks_local_timeout_without_hiding_running_container(self) -> None:
+        class FakeContainer:
+            status = "running"
+            id = "container-1"
+            image = SimpleNamespace(tags=["steamrt3:latest"])
+            attrs = {"State": {"Status": "running", "RestartCount": 1}}
+
+            def reload(self) -> None:
+                return None
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_host="127.0.0.1",
+            server_query_enabled=True,
+            server_query_timeout_seconds=2,
+        )
+        runtime.get_server = lambda _key: SimpleNamespace(
+            key="ze_xl_1",
+            catalog_server_id="catalog-1",
+            container_name="kepcs-ze-xl-28010",
+            groups=["ze_xl"],
+            image="steamrt3:latest",
+            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+        )
+        runtime._get_container = lambda _name: FakeContainer()
+        runtime._server_query_port = lambda _server: 28010
+
+        def raise_timeout(_server) -> None:
+            raise TimeoutError("timed out")
+
+        runtime._query_server_info = raise_timeout
+
+        result = DockerRuntime.inspect_server(runtime, "ze_xl_1")
+
+        self.assertEqual(result["containerStatus"], "running")
+        self.assertEqual(result["agentA2sStatus"], "timeout")
+        self.assertEqual(result["agentA2sError"], "timed out")
+        self.assertEqual(result["queryError"], "timed out")
+
+    def test_inspect_server_skips_a2s_when_container_is_not_running(self) -> None:
+        class FakeContainer:
+            status = "exited"
+            id = "container-1"
+            image = SimpleNamespace(tags=["steamrt3:latest"])
+            attrs = {"State": {"Status": "exited", "RestartCount": 1}}
+
+            def reload(self) -> None:
+                return None
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.get_server = lambda _key: SimpleNamespace(
+            key="ze_xl_1",
+            catalog_server_id="catalog-1",
+            container_name="kepcs-ze-xl-28010",
+            groups=["ze_xl"],
+            image="steamrt3:latest",
+            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+            ports=[SimpleNamespace(host_port=28010, protocol="udp")],
+        )
+        runtime.config = SimpleNamespace(server_query_host="127.0.0.1")
+        runtime._get_container = lambda _name: FakeContainer()
+        runtime._query_server_info = lambda _server: (_ for _ in ()).throw(AssertionError("A2S should not run"))
+
+        result = DockerRuntime.inspect_server(runtime, "ze_xl_1")
+
+        self.assertEqual(result["containerStatus"], "exited")
+        self.assertEqual(result["agentA2sStatus"], "unknown")
+        self.assertNotIn("agentA2sError", result)
+
+    def test_list_servers_pending_snapshot_includes_explicit_status_fields(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_enabled=True,
+            server_query_cache_ttl_seconds=15,
+            server_query_host="127.0.0.1",
+            servers=[
+                SimpleNamespace(
+                    key="ze_xl_1",
+                    catalog_server_id="catalog-1",
+                    container_name="kepcs-ze-xl-28010",
+                    groups=["ze_xl"],
+                    image="steamrt3:latest",
+                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    ports=[SimpleNamespace(host_port=28010, protocol="udp")],
+                ),
+            ],
+        )
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {}
+        runtime._server_refresh_in_flight = False
+        runtime._server_refresh_requested_at = 0.0
+
+        refresh_calls: list[bool] = []
+        runtime.refresh_server_snapshots_async = lambda force=False: refresh_calls.append(force) or True
+        runtime.get_server = lambda key: runtime.config.servers[0]
+        runtime._server_query_port = lambda _server: 28010
+
+        rows = DockerRuntime.list_servers(runtime)
+
+        self.assertEqual(refresh_calls, [False])
+        self.assertEqual(rows[0]["containerStatus"], "pending")
+        self.assertEqual(rows[0]["agentA2sStatus"], "pending")
 
     def test_list_servers_returns_pending_snapshot_while_async_refresh_runs(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)
@@ -213,6 +319,8 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(refresh_calls, [False])
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "pending")
+        self.assertEqual(rows[0]["containerStatus"], "pending")
+        self.assertEqual(rows[0]["agentA2sStatus"], "pending")
         self.assertEqual(rows[0]["catalogServerId"], "catalog-1")
         self.assertTrue(rows[0]["queryPending"])
         self.assertTrue(rows[0]["queryStale"])
