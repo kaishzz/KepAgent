@@ -173,7 +173,8 @@ class QueryServerInfoTests(unittest.TestCase):
 
         self.assertEqual(result["primaryPort"], 28010)
         self.assertEqual(result["catalogServerId"], "catalog-1")
-        self.assertEqual(result["host"], "127.0.0.1")
+        self.assertIsNone(result["host"])
+        self.assertEqual(result["queryHost"], "127.0.0.1")
         self.assertEqual(result["mode"], "ze_xl")
         self.assertEqual(result["containerStatus"], "running")
         self.assertEqual(result["agentA2sStatus"], "ok")

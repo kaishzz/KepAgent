@@ -74,13 +74,15 @@ class DockerRuntime:
 
     def _build_base_server_payload(self, server: ServerDefinition) -> dict[str, Any]:
         primary_port = self._server_query_port(server)
+        query_host = str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1"
         return {
             "key": server.key,
             "catalogServerId": str(server.catalog_server_id or "").strip() or None,
             "containerName": server.container_name,
             "groups": server.groups,
             "primaryPort": primary_port,
-            "host": str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1",
+            "host": None,
+            "queryHost": query_host,
             "mode": str(server.labels.get("kepcs.mode") or "").strip(),
             "name": str(server.labels.get("kepcs.server_key") or server.key).strip(),
         }
