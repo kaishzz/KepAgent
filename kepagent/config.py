@@ -52,8 +52,8 @@ class MonitorProfile(BaseModel):
 class AgentConfig(BaseModel):
     api_base_url: str
     api_key: str
-    poll_interval_seconds: int = 3
-    heartbeat_interval_seconds: int = 5
+    poll_interval_seconds: int = 1
+    heartbeat_interval_seconds: int = 3
     request_timeout_seconds: int = 15
     batch_start_interval_seconds: int = Field(default=30, ge=0)
     docker_base_url: str | None = None
