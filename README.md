@@ -77,6 +77,8 @@ cp agent.example.yaml agent.yaml
 - 服务器键值与容器名
 - 镜像、端口、挂载、环境变量
 - 分组与分组显示名
+- 默认轮询和心跳节奏（当前示例默认 `poll_interval_seconds: 1`、`heartbeat_interval_seconds: 1`）
+- 本地服务器查询缓存（当前示例默认 `server_query_cache_ttl_seconds: 1`）
 - 批量启动间隔秒数
 - `monitor_server_key`
 - 监控轮询、稳定时长和恢复超时
