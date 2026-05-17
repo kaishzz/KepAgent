@@ -72,6 +72,32 @@ class DockerRuntime:
             if not str(key).startswith("_")
         }
 
+    def _remember_server_snapshot(self, snapshot: dict[str, Any]) -> None:
+        safe_snapshot = dict(snapshot or {})
+        server_key = str(safe_snapshot.get("key") or "").strip()
+        if not server_key:
+            return
+
+        with self._server_snapshot_lock:
+            previous = self._server_snapshots.get(server_key, {}).copy()
+
+            if previous:
+                previous_payload = self._strip_snapshot_meta(previous)
+                for field in ("serverName", "map", "maxPlayers", "visibility"):
+                    if safe_snapshot.get(field) in (None, "") and previous_payload.get(field) not in (None, ""):
+                        safe_snapshot[field] = previous_payload.get(field)
+
+            if safe_snapshot.get("currentPlayers") is None:
+                safe_snapshot["currentPlayers"] = 0
+
+            safe_snapshot["_refreshedAtMonotonic"] = time.monotonic()
+            self._server_snapshots[server_key] = safe_snapshot
+
+    def _refresh_server_snapshot_now(self, key: str) -> dict[str, Any]:
+        snapshot = self.inspect_server(key)
+        self._remember_server_snapshot(snapshot)
+        return snapshot
+
     def _build_base_server_payload(self, server: ServerDefinition) -> dict[str, Any]:
         primary_port = self._server_query_port(server)
         query_host = str(getattr(self.config, "server_query_host", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1"
@@ -134,7 +160,7 @@ class DockerRuntime:
                 return False
 
             if not force and self._server_snapshots:
-                youngest_age = min(
+                oldest_age = max(
                     (
                         age
                         for age in (
@@ -145,7 +171,7 @@ class DockerRuntime:
                     ),
                     default=None,
                 )
-                if youngest_age is not None and youngest_age < ttl_seconds:
+                if oldest_age is not None and oldest_age < ttl_seconds:
                     return False
 
             self._server_refresh_in_flight = True
@@ -753,7 +779,7 @@ class DockerRuntime:
                 return {
                     "changed": False,
                     "message": f"{server.container_name} already running",
-                    "server": self.inspect_server(key),
+                    "server": self._refresh_server_snapshot_now(key),
                 }
             container.remove(force=True)
 
@@ -774,11 +800,12 @@ class DockerRuntime:
             restart_policy={"Name": server.restart_policy},
         )
 
-        return {
+        result = {
             "changed": True,
             "message": f"{server.container_name} started",
-            "server": self.inspect_server(key),
+            "server": self._refresh_server_snapshot_now(key),
         }
+        return result
 
     def stop_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
@@ -788,16 +815,17 @@ class DockerRuntime:
             return {
                 "changed": False,
                 "message": f"{server.container_name} not found",
-                "server": self.inspect_server(key),
+                "server": self._refresh_server_snapshot_now(key),
             }
 
         container.reload()
         container.remove(force=True)
-        return {
+        result = {
             "changed": True,
             "message": f"{server.container_name} force removed",
-            "server": self.inspect_server(key),
+            "server": self._refresh_server_snapshot_now(key),
         }
+        return result
 
     def restart_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
@@ -819,18 +847,20 @@ class DockerRuntime:
         container = self._get_container(server.container_name)
 
         if not container:
-            return {
+            result = {
                 "changed": False,
                 "message": f"{server.container_name} not found",
-                "server": self.inspect_server(key),
+                "server": self._refresh_server_snapshot_now(key),
             }
+            return result
 
         container.remove(force=force)
-        return {
+        result = {
             "changed": True,
             "message": f"{server.container_name} removed",
-            "server": self.inspect_server(key),
+            "server": self._refresh_server_snapshot_now(key),
         }
+        return result
 
     def start_servers(self, server_keys: list[str]) -> dict[str, Any]:
         return self._run_servers("start", server_keys)

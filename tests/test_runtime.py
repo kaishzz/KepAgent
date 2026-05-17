@@ -368,6 +368,67 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(rows[0]["serverName"], "KepCs ZE")
         self.assertNotIn("_refreshedAtMonotonic", rows[0])
 
+    def test_refresh_server_snapshots_async_refreshes_when_any_snapshot_is_stale(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            server_query_enabled=True,
+            server_query_cache_ttl_seconds=15,
+            servers=[],
+        )
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {
+            "fresh": {
+                "key": "fresh",
+                "_refreshedAtMonotonic": time.monotonic(),
+            },
+            "stale": {
+                "key": "stale",
+                "_refreshedAtMonotonic": time.monotonic() - 30,
+            },
+        }
+        runtime._server_refresh_in_flight = False
+        runtime._server_refresh_requested_at = 0.0
+
+        starts: list[str] = []
+
+        class FakeThread:
+            def __init__(self, *, target, name, daemon) -> None:
+                self._target = target
+                self.name = name
+                self.daemon = daemon
+
+            def start(self) -> None:
+                starts.append(self.name)
+
+        original_thread = runtime_module.threading.Thread
+        runtime_module.threading.Thread = FakeThread
+        try:
+            started = DockerRuntime.refresh_server_snapshots_async(runtime)
+        finally:
+            runtime_module.threading.Thread = original_thread
+
+        self.assertTrue(started)
+        self.assertEqual(starts, ["kepagent-server-query-refresh"])
+        self.assertTrue(runtime._server_refresh_in_flight)
+
+    def test_refresh_server_snapshot_now_updates_cache_and_returns_snapshot(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {}
+        runtime.inspect_server = lambda key: {
+            "key": key,
+            "status": "running",
+            "containerStatus": "running",
+            "currentPlayers": 12,
+            "maxPlayers": 64,
+        }
+
+        snapshot = DockerRuntime._refresh_server_snapshot_now(runtime, "ze_xl_1")
+
+        self.assertEqual(snapshot["key"], "ze_xl_1")
+        self.assertEqual(runtime._server_snapshots["ze_xl_1"]["currentPlayers"], 12)
+        self.assertIn("_refreshedAtMonotonic", runtime._server_snapshots["ze_xl_1"])
+
     def test_build_summary_uses_provided_servers_without_refreshing_list(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime.config = SimpleNamespace(servers=[object(), object(), object()])
