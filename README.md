@@ -126,7 +126,7 @@ python3 main.py --version
 
 - `node.check_update`：先尝试比对本地和远端 `buildid`；如果本地没有 `manifest`，会先打印“没有 manifest”并直接进入停服、`validate`、崩溃检查和启动流程
 - `node.check_validate`：直接停服并执行 `validate`；如果本地没有 `manifest`，会先打印“没有 manifest”再继续
-- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；两台及以上批量启动时按 `batch_start_interval_seconds` 逐台启动，批量停止时不等待，批量重启会先强制删除选中的容器，再按启动间隔逐台拉起
+- `docker.start_server`、`docker.stop_server`、`docker.restart_server`、`docker.remove_server`：支持 `payload.key` 单服执行，也支持 `payload.serverKeys` 批量执行并返回汇总结果；单台启动不等待，两台及以上批量启动时按 `batch_start_interval_seconds` 逐台启动，批量停止时不等待，批量重启会先强制删除选中的容器，再按启动间隔逐台拉起
 - `node.monitor_check`：只运行崩溃检查，不自动启动其它服务器；配置了 `monitor_profiles` 时会按各个模式配置逐项检查
 - `node.monitor_start`：监控通过后启动 YAML 中配置的目标；配置了 `monitor_profiles` 时各模式独立检查，某个模式失败只会阻止该模式启动，不影响其它已通过模式
 - `monitor_profiles[].monitor_server_key` 指定该模式用于崩溃检查的服务器，例如 `ze_xl_1`、`ze_pt_1`

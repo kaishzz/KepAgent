@@ -55,14 +55,14 @@ class AgentConfig(BaseModel):
     poll_interval_seconds: int = 1
     heartbeat_interval_seconds: int = 3
     request_timeout_seconds: int = 15
-    batch_start_interval_seconds: int = Field(default=30, ge=0)
+    batch_start_interval_seconds: int = Field(default=15, ge=0)
     docker_base_url: str | None = None
     group_labels: dict[str, str] = Field(default_factory=dict)
     group_order: list[str] = Field(default_factory=list)
     server_query_enabled: bool = True
     server_query_host: str = "127.0.0.1"
     server_query_timeout_seconds: int = 2
-    server_query_cache_ttl_seconds: int = 15
+    server_query_cache_ttl_seconds: int = 5
     rcon_host: str = "127.0.0.1"
     rcon_timeout_seconds: int = 5
     steamcmd_sh: str = "/data/steamcmd/steamcmd.sh"

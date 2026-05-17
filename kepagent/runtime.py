@@ -52,7 +52,7 @@ class DockerRuntime:
         self._server_refresh_requested_at = 0.0
 
     def _server_query_cache_ttl_seconds(self) -> int:
-        return max(1, int(getattr(self.config, "server_query_cache_ttl_seconds", 15) or 15))
+        return max(1, int(getattr(self.config, "server_query_cache_ttl_seconds", 5) or 5))
 
     def _snapshot_age_seconds(self, snapshot: dict[str, Any] | None, now: float | None = None) -> float | None:
         if not isinstance(snapshot, dict):
@@ -302,7 +302,7 @@ class DockerRuntime:
         if server_count < 2:
             return 0
 
-        return max(0, int(getattr(self.config, "batch_start_interval_seconds", 30) or 0))
+        return max(0, int(getattr(self.config, "batch_start_interval_seconds", 15) or 0))
 
     def _wait_before_next_batch_start(self, servers: list[ServerDefinition], index: int) -> None:
         if index >= len(servers) - 1:
