@@ -111,7 +111,8 @@ class CompactFinishResultTests(unittest.TestCase):
         self.assertEqual(compact["timelineTruncated"], 40)
         self.assertEqual(compact["startServers"]["total"], 12)
         self.assertEqual(len(compact["startServers"]["messages"]), 12)
-        self.assertNotIn("results", compact["startServers"])
+        self.assertEqual(len(compact["startServers"]["results"]), 12)
+        self.assertEqual(compact["startServers"]["results"][0]["server"]["key"], "ze_xl_1")
 
 
 class ProcessOneCommandTests(unittest.TestCase):
@@ -133,6 +134,9 @@ class ProcessOneCommandTests(unittest.TestCase):
             def append_command_logs(self, _command_id: str, batch):
                 appended_batches.append(list(batch))
 
+            def send_heartbeat(self, _payload):
+                return {"success": True}
+
             def finish_command(self, command_id: str, *, success: bool, result, **kwargs):
                 finished.update(
                     {
@@ -150,7 +154,17 @@ class ProcessOneCommandTests(unittest.TestCase):
             def set_log_emitter(self, _emitter):
                 return None
 
+            def set_state_reporter(self, _reporter):
+                return None
+
+            def list_servers(self):
+                return []
+
+            def build_summary(self, servers=None):
+                return {"configuredServers": 0, "runningServers": 0, "missingServers": 0}
+
         app = KepAgentApp.__new__(KepAgentApp)
+        app.config = types.SimpleNamespace(group_labels={}, group_order=[])
         app.client = FakeClient()
         app.runtime = FakeRuntime()
         app.execute_command = lambda _command, logs: (
@@ -253,6 +267,63 @@ class HeartbeatPayloadTests(unittest.TestCase):
         self.assertEqual(app.runtime.calls[0], ("list_servers", None))
         self.assertEqual(app.runtime.calls[1][0], "build_summary")
         self.assertIs(app.runtime.calls[1][1], payload["servers"])
+
+    def test_report_runtime_state_reuses_heartbeat_payload(self) -> None:
+        sent_payloads: list[dict[str, object]] = []
+
+        class FakeClient:
+            def send_heartbeat(self, payload):
+                sent_payloads.append(payload)
+                return {"success": True}
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.client = FakeClient()
+        app.build_heartbeat_payload = lambda: {"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}}
+
+        app.report_runtime_state()
+
+        self.assertEqual(
+            sent_payloads,
+            [{"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}}],
+        )
+
+    def test_report_runtime_state_safely_swallows_errors(self) -> None:
+        class FakeClient:
+            def send_heartbeat(self, _payload):
+                raise RuntimeError("network down")
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.client = FakeClient()
+        app.build_heartbeat_payload = lambda: {"servers": []}
+
+        self.assertFalse(app.report_runtime_state_safely())
+
+
+class CompactServerSnapshotTests(unittest.TestCase):
+    def test_keeps_runtime_status_fields_for_server_patch(self) -> None:
+        compact = KepAgentApp._compact_server_snapshot(
+            {
+                "key": "ze_xl_1",
+                "containerName": "kepcs-ze-xl-28010",
+                "state": "running",
+                "status": "running",
+                "containerStatus": "running",
+                "agentA2sStatus": "ok",
+                "currentPlayers": 12,
+                "maxPlayers": 64,
+                "map": "ze_mist",
+                "serverName": "训练服 1",
+                "queryPending": False,
+                "queryStale": False,
+                "restartCount": 1,
+            }
+        )
+
+        self.assertEqual(compact["containerStatus"], "running")
+        self.assertEqual(compact["agentA2sStatus"], "ok")
+        self.assertEqual(compact["currentPlayers"], 12)
+        self.assertEqual(compact["maxPlayers"], 64)
+        self.assertEqual(compact["map"], "ze_mist")
 
 
 if __name__ == "__main__":

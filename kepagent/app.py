@@ -121,6 +121,18 @@ class KepAgentApp:
             },
         }
 
+    def report_runtime_state(self) -> None:
+        payload = self.build_heartbeat_payload()
+        self.client.send_heartbeat(payload)
+
+    def report_runtime_state_safely(self) -> bool:
+        try:
+            self.report_runtime_state()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Runtime state report failed: %s", exc)
+            return False
+
     def emit_logs(self, command_id: str, logs: list[str]) -> None:
         if not logs:
             return
@@ -202,7 +214,25 @@ class KepAgentApp:
             return None
         return {
             key: payload.get(key)
-            for key in ("key", "containerName", "state", "status", "primaryPort", "restartCount")
+            for key in (
+                "key",
+                "containerName",
+                "state",
+                "status",
+                "containerStatus",
+                "agentA2sStatus",
+                "agentA2sError",
+                "queryError",
+                "queryPending",
+                "queryStale",
+                "currentPlayers",
+                "maxPlayers",
+                "map",
+                "serverName",
+                "visibility",
+                "primaryPort",
+                "restartCount",
+            )
             if key in payload
         }
 
@@ -225,6 +255,22 @@ class KepAgentApp:
             ]
             if messages:
                 compact["messages"] = messages[:MAX_FINISH_BATCH_MESSAGES]
+            compact_results = []
+            for item in results[:MAX_FINISH_BATCH_MESSAGES]:
+                if not isinstance(item, dict):
+                    continue
+                compact_item = {
+                    key: item.get(key)
+                    for key in ("changed", "message", "removed")
+                    if key in item
+                }
+                server = cls._compact_server_snapshot(item.get("server"))
+                if server:
+                    compact_item["server"] = server
+                if compact_item:
+                    compact_results.append(compact_item)
+            if compact_results:
+                compact["results"] = compact_results
             if len(results) > MAX_FINISH_BATCH_MESSAGES:
                 compact["truncatedResults"] = len(results) - MAX_FINISH_BATCH_MESSAGES
         return compact
@@ -484,9 +530,11 @@ class KepAgentApp:
 
         self.runtime.set_cancel_reader(lambda: self._read_cancel_request(command_id))
         logs = LiveCommandLogger(lambda batch: self.client.append_command_logs(command_id, batch))
+        self.runtime.set_state_reporter(self.report_runtime_state)
         try:
             execution = self.execute_command(command, logs)
             logs.flush()
+            self.report_runtime_state_safely()
             compact_result = self._compact_finish_result(command_type, execution.get("result"))
             self.client.finish_command(
                 command_id,
@@ -497,6 +545,7 @@ class KepAgentApp:
             LOGGER.warning("Command cancelled: %s", exc)
             logs.emit(str(exc), level="warning")
             logs.flush()
+            self.report_runtime_state_safely()
             self.client.finish_command(
                 command_id,
                 success=False,
@@ -512,6 +561,7 @@ class KepAgentApp:
             LOGGER.exception("Command execution failed")
             logs.emit(f"Command failed: {exc}", level="error")
             logs.flush()
+            self.report_runtime_state_safely()
             self.client.finish_command(
                 command_id,
                 success=False,
@@ -520,6 +570,7 @@ class KepAgentApp:
         finally:
             self.runtime.set_log_emitter(None)
             self.runtime.set_cancel_reader(None)
+            self.runtime.set_state_reporter(None)
 
     def run_forever(self) -> int:
         LOGGER.info("KepAgent starting")

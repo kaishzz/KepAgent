@@ -746,6 +746,41 @@ class BatchStartIntervalTests(unittest.TestCase):
             ],
         )
 
+    def test_batch_start_reports_runtime_state_during_each_step(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(batch_start_interval_seconds=2)
+        runtime._servers_for_keys = lambda keys: [SimpleNamespace(key=key) for key in keys]
+        runtime._raise_if_cancel_requested = lambda: None
+        runtime._emit_log = lambda _message, level="info": None
+        runtime._state_reporter = lambda: calls.append(("report", None))
+        runtime.start_server = lambda key: calls.append(("start", key)) or {
+            "changed": True,
+            "message": f"{key} started",
+        }
+
+        original_sleep = runtime_module.time.sleep
+        runtime_module.time.sleep = lambda seconds: calls.append(("sleep", seconds))
+        try:
+            DockerRuntime.start_servers(runtime, ["ze_xl_1", "ze_xl_2"])
+        finally:
+            runtime_module.time.sleep = original_sleep
+
+        self.assertEqual(
+            calls,
+            [
+                ("start", "ze_xl_1"),
+                ("report", None),
+                ("sleep", 1),
+                ("report", None),
+                ("sleep", 1),
+                ("report", None),
+                ("start", "ze_xl_2"),
+                ("report", None),
+            ],
+        )
+
     def test_single_start_and_batch_stop_do_not_wait(self) -> None:
         calls: list[tuple[str, object]] = []
 

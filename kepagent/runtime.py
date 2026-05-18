@@ -46,6 +46,7 @@ class DockerRuntime:
         self._groups = self._build_groups(config.servers)
         self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
         self._log_emitter: Callable[[str, str], None] | None = None
+        self._state_reporter: Callable[[], None] | None = None
         self._server_snapshots: dict[str, dict[str, Any]] = {}
         self._server_snapshot_lock = threading.Lock()
         self._server_refresh_in_flight = False
@@ -345,6 +346,7 @@ class DockerRuntime:
         for _second in range(interval_seconds):
             self._raise_if_cancel_requested()
             time.sleep(1)
+            self._emit_state_report()
         self._raise_if_cancel_requested()
 
     def set_cancel_reader(self, reader: Callable[[], dict[str, Any] | None] | None) -> None:
@@ -353,11 +355,24 @@ class DockerRuntime:
     def set_log_emitter(self, emitter: Callable[[str, str], None] | None) -> None:
         self._log_emitter = emitter
 
+    def set_state_reporter(self, reporter: Callable[[], None] | None) -> None:
+        self._state_reporter = reporter
+
     def _emit_log(self, message: str, *, level: str = "info") -> None:
         if self._log_emitter is None:
             return
 
         self._log_emitter(str(message or ""), level=str(level or "info"))
+
+    def _emit_state_report(self) -> None:
+        reporter = getattr(self, "_state_reporter", None)
+        if reporter is None:
+            return
+
+        try:
+            reporter()
+        except Exception:
+            return
 
     @staticmethod
     def _format_elapsed(seconds: float) -> str:
@@ -888,6 +903,7 @@ class DockerRuntime:
             results.append(result)
             if result.get("changed"):
                 changed += 1
+            self._emit_state_report()
             if action == "start":
                 self._wait_before_next_batch_start(servers, index)
 
@@ -921,6 +937,7 @@ class DockerRuntime:
             result["message"] = f"{server.container_name} recreated"
             results.append(result)
             changed += 1
+            self._emit_state_report()
             self._wait_before_next_batch_start(servers, index)
 
         return {
