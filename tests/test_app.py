@@ -248,9 +248,13 @@ class HeartbeatPayloadTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.calls: list[tuple[str, object]] = []
 
-            def list_servers(self):
-                self.calls.append(("list_servers", None))
+            def list_servers(self, *, use_cached_only=False):
+                self.calls.append(("list_servers", use_cached_only))
                 return [{"key": "ze_xl_1", "state": "running"}]
+
+            def refresh_server_snapshots_now(self, server_keys):
+                self.calls.append(("refresh_server_snapshots_now", list(server_keys)))
+                return [{"key": key, "state": "running"} for key in server_keys]
 
             def build_summary(self, servers=None):
                 self.calls.append(("build_summary", servers))
@@ -264,9 +268,37 @@ class HeartbeatPayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["servers"], [{"key": "ze_xl_1", "state": "running"}])
         self.assertEqual(payload["summary"]["runningServers"], 1)
-        self.assertEqual(app.runtime.calls[0], ("list_servers", None))
+        self.assertEqual(app.runtime.calls[0], ("list_servers", False))
         self.assertEqual(app.runtime.calls[1][0], "build_summary")
         self.assertIs(app.runtime.calls[1][1], payload["servers"])
+
+    def test_build_heartbeat_payload_force_refreshes_target_servers(self) -> None:
+        class FakeRuntime:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, object]] = []
+
+            def list_servers(self, *, use_cached_only=False):
+                self.calls.append(("list_servers", use_cached_only))
+                return [{"key": "ze_xl_1", "state": "running", "currentPlayers": 12, "maxPlayers": 64}]
+
+            def refresh_server_snapshots_now(self, server_keys):
+                self.calls.append(("refresh_server_snapshots_now", list(server_keys)))
+                return [{"key": key, "state": "running"} for key in server_keys]
+
+            def build_summary(self, servers=None):
+                self.calls.append(("build_summary", servers))
+                return {"configuredServers": 1, "runningServers": 1, "missingServers": 0}
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.config = types.SimpleNamespace(group_labels={"ze_xl": "训练服"}, group_order=["ze_xl"])
+        app.runtime = FakeRuntime()
+
+        payload = app.build_heartbeat_payload(["ze_xl_1"])
+
+        self.assertEqual(payload["servers"][0]["currentPlayers"], 12)
+        self.assertEqual(payload["servers"][0]["maxPlayers"], 64)
+        self.assertEqual(app.runtime.calls[0], ("refresh_server_snapshots_now", ["ze_xl_1"]))
+        self.assertEqual(app.runtime.calls[1], ("list_servers", True))
 
     def test_report_runtime_state_reuses_heartbeat_payload(self) -> None:
         sent_payloads: list[dict[str, object]] = []
@@ -278,13 +310,13 @@ class HeartbeatPayloadTests(unittest.TestCase):
 
         app = KepAgentApp.__new__(KepAgentApp)
         app.client = FakeClient()
-        app.build_heartbeat_payload = lambda: {"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}}
+        app.build_heartbeat_payload = lambda server_keys=None: {"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}, "serverKeys": server_keys}
 
-        app.report_runtime_state()
+        app.report_runtime_state(["ze_xl_1"])
 
         self.assertEqual(
             sent_payloads,
-            [{"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}}],
+            [{"servers": [{"key": "ze_xl_1"}], "summary": {"runningServers": 1}, "serverKeys": ["ze_xl_1"]}],
         )
 
     def test_report_runtime_state_safely_swallows_errors(self) -> None:
@@ -294,9 +326,9 @@ class HeartbeatPayloadTests(unittest.TestCase):
 
         app = KepAgentApp.__new__(KepAgentApp)
         app.client = FakeClient()
-        app.build_heartbeat_payload = lambda: {"servers": []}
+        app.build_heartbeat_payload = lambda server_keys=None: {"servers": [], "serverKeys": server_keys}
 
-        self.assertFalse(app.report_runtime_state_safely())
+        self.assertFalse(app.report_runtime_state_safely(["ze_xl_1"]))
 
 
 class CompactServerSnapshotTests(unittest.TestCase):

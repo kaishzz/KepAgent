@@ -101,8 +101,12 @@ class KepAgentApp:
                 f"missing={sorted(missing_handlers)} extra={sorted(extra_handlers)}"
             )
 
-    def build_heartbeat_payload(self) -> dict[str, Any]:
-        servers = self.runtime.list_servers()
+    def build_heartbeat_payload(self, server_keys: list[str] | None = None) -> dict[str, Any]:
+        if server_keys:
+            self.runtime.refresh_server_snapshots_now(server_keys)
+            servers = self.runtime.list_servers(use_cached_only=True)
+        else:
+            servers = self.runtime.list_servers()
         return {
             "agentVersion": AGENT_VERSION,
             "hostname": socket.gethostname(),
@@ -121,13 +125,13 @@ class KepAgentApp:
             },
         }
 
-    def report_runtime_state(self) -> None:
-        payload = self.build_heartbeat_payload()
+    def report_runtime_state(self, server_keys: list[str] | None = None) -> None:
+        payload = self.build_heartbeat_payload(server_keys)
         self.client.send_heartbeat(payload)
 
-    def report_runtime_state_safely(self) -> bool:
+    def report_runtime_state_safely(self, server_keys: list[str] | None = None) -> bool:
         try:
-            self.report_runtime_state()
+            self.report_runtime_state(server_keys)
             return True
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Runtime state report failed: %s", exc)

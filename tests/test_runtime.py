@@ -817,6 +817,10 @@ class BatchStartIntervalTests(unittest.TestCase):
         runtime._servers_for_keys = lambda keys: [SimpleNamespace(key=key) for key in keys]
         runtime._raise_if_cancel_requested = lambda: None
         runtime._emit_log = lambda message, level="info": logs.append(message)
+        runtime._emit_state_report = lambda server_keys=None: calls.append((
+            "report",
+            list(server_keys) if isinstance(server_keys, list) else server_keys,
+        ))
         runtime.start_server = lambda key: calls.append(("start", key)) or {
             "changed": True,
             "message": f"{key} started",
@@ -833,12 +837,19 @@ class BatchStartIntervalTests(unittest.TestCase):
             calls,
             [
                 ("start", "ze_xl_1"),
+                ("report", ["ze_xl_1"]),
                 ("sleep", 1),
+                ("report", ["ze_xl_1"]),
                 ("sleep", 1),
+                ("report", ["ze_xl_1"]),
                 ("start", "ze_xl_2"),
+                ("report", ["ze_xl_2"]),
                 ("sleep", 1),
+                ("report", ["ze_xl_1", "ze_xl_2"]),
                 ("sleep", 1),
+                ("report", ["ze_xl_1", "ze_xl_2"]),
                 ("start", "ze_xl_3"),
+                ("report", ["ze_xl_3"]),
             ],
         )
         self.assertEqual(result["total"], 3)
@@ -858,7 +869,10 @@ class BatchStartIntervalTests(unittest.TestCase):
         runtime._servers_for_keys = lambda keys: [SimpleNamespace(key=key) for key in keys]
         runtime._raise_if_cancel_requested = lambda: None
         runtime._emit_log = lambda _message, level="info": None
-        runtime._state_reporter = lambda: calls.append(("report", None))
+        runtime._emit_state_report = lambda server_keys=None: calls.append((
+            "report",
+            list(server_keys) if isinstance(server_keys, list) else server_keys,
+        ))
         runtime.start_server = lambda key: calls.append(("start", key)) or {
             "changed": True,
             "message": f"{key} started",
@@ -875,13 +889,13 @@ class BatchStartIntervalTests(unittest.TestCase):
             calls,
             [
                 ("start", "ze_xl_1"),
-                ("report", None),
+                ("report", ["ze_xl_1"]),
                 ("sleep", 1),
-                ("report", None),
+                ("report", ["ze_xl_1"]),
                 ("sleep", 1),
-                ("report", None),
+                ("report", ["ze_xl_1"]),
                 ("start", "ze_xl_2"),
-                ("report", None),
+                ("report", ["ze_xl_2"]),
             ],
         )
 

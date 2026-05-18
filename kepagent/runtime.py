@@ -46,7 +46,7 @@ class DockerRuntime:
         self._groups = self._build_groups(config.servers)
         self._cancel_reader: Callable[[], dict[str, Any] | None] | None = None
         self._log_emitter: Callable[[str, str], None] | None = None
-        self._state_reporter: Callable[[], None] | None = None
+        self._state_reporter: Callable[[list[str] | None], None] | None = None
         self._server_snapshots: dict[str, dict[str, Any]] = {}
         self._server_snapshot_lock = threading.Lock()
         self._server_refresh_in_flight = False
@@ -157,6 +157,38 @@ class DockerRuntime:
         finally:
             with self._server_snapshot_lock:
                 self._server_refresh_in_flight = False
+
+    def _server_rows_from_cache(self, *, now: float | None = None) -> list[dict[str, Any]]:
+        current = time.monotonic() if now is None else float(now)
+        ttl_seconds = self._server_query_cache_ttl_seconds()
+
+        with self._server_snapshot_lock:
+            snapshots_by_key = {
+                key: value.copy()
+                for key, value in self._server_snapshots.items()
+            }
+
+        rows: list[dict[str, Any]] = []
+        for server in self.config.servers:
+            snapshot = snapshots_by_key.get(server.key)
+            age_seconds = self._snapshot_age_seconds(snapshot, current)
+            if snapshot and age_seconds is not None and age_seconds <= ttl_seconds:
+                rows.append(self._strip_snapshot_meta(snapshot))
+                continue
+
+            if snapshot:
+                rows.append(self._snapshot_stale_payload(snapshot, now=current))
+                continue
+
+            rows.append(self._build_pending_server_payload(server))
+
+        return rows
+
+    def refresh_server_snapshots_now(self, server_keys: list[str]) -> list[dict[str, Any]]:
+        snapshots = []
+        for server in self._servers_for_keys(server_keys):
+            snapshots.append(self._refresh_server_snapshot_now(server.key))
+        return snapshots
 
     def refresh_server_snapshots_async(self, *, force: bool = False) -> bool:
         if not getattr(self.config, "server_query_enabled", True):
@@ -340,7 +372,12 @@ class DockerRuntime:
 
         return max(0, int(getattr(self.config, "batch_start_interval_seconds", 15) or 0))
 
-    def _wait_before_next_batch_start(self, servers: list[ServerDefinition], index: int) -> None:
+    def _wait_before_next_batch_start(
+        self,
+        servers: list[ServerDefinition],
+        index: int,
+        report_server_keys: list[str] | None = None,
+    ) -> None:
         if index >= len(servers) - 1:
             return
 
@@ -355,7 +392,7 @@ class DockerRuntime:
         for _second in range(interval_seconds):
             self._raise_if_cancel_requested()
             time.sleep(1)
-            self._emit_state_report()
+            self._emit_state_report(report_server_keys)
         self._raise_if_cancel_requested()
 
     def set_cancel_reader(self, reader: Callable[[], dict[str, Any] | None] | None) -> None:
@@ -364,7 +401,7 @@ class DockerRuntime:
     def set_log_emitter(self, emitter: Callable[[str, str], None] | None) -> None:
         self._log_emitter = emitter
 
-    def set_state_reporter(self, reporter: Callable[[], None] | None) -> None:
+    def set_state_reporter(self, reporter: Callable[[list[str] | None], None] | None) -> None:
         self._state_reporter = reporter
 
     def _emit_log(self, message: str, *, level: str = "info") -> None:
@@ -373,13 +410,13 @@ class DockerRuntime:
 
         self._log_emitter(str(message or ""), level=str(level or "info"))
 
-    def _emit_state_report(self) -> None:
+    def _emit_state_report(self, server_keys: list[str] | None = None) -> None:
         reporter = getattr(self, "_state_reporter", None)
         if reporter is None:
             return
 
         try:
-            reporter()
+            reporter(list(server_keys) if isinstance(server_keys, list) else server_keys)
         except Exception:
             return
 
@@ -762,36 +799,14 @@ class DockerRuntime:
 
         return payload
 
-    def list_servers(self) -> list[dict[str, Any]]:
+    def list_servers(self, *, use_cached_only: bool = False) -> list[dict[str, Any]]:
         if not getattr(self.config, "server_query_enabled", True):
             return [self.inspect_server(server.key) for server in self.config.servers]
 
-        self.refresh_server_snapshots_async()
-        now = time.monotonic()
-        ttl_seconds = self._server_query_cache_ttl_seconds()
-        snapshots_by_key = {}
+        if not use_cached_only:
+            self.refresh_server_snapshots_async()
 
-        with self._server_snapshot_lock:
-            snapshots_by_key = {
-                key: value.copy()
-                for key, value in self._server_snapshots.items()
-            }
-
-        rows: list[dict[str, Any]] = []
-        for server in self.config.servers:
-            snapshot = snapshots_by_key.get(server.key)
-            age_seconds = self._snapshot_age_seconds(snapshot, now)
-            if snapshot and age_seconds is not None and age_seconds <= ttl_seconds:
-                rows.append(self._strip_snapshot_meta(snapshot))
-                continue
-
-            if snapshot:
-                rows.append(self._snapshot_stale_payload(snapshot, now=now))
-                continue
-
-            rows.append(self._build_pending_server_payload(server))
-
-        return rows
+        return self._server_rows_from_cache()
 
     def start_server(self, key: str) -> dict[str, Any]:
         server = self.get_server(key)
@@ -904,6 +919,7 @@ class DockerRuntime:
 
         results = []
         changed = 0
+        reported_server_keys: list[str] = []
 
         for index, server in enumerate(servers):
             self._raise_if_cancel_requested()
@@ -912,9 +928,11 @@ class DockerRuntime:
             results.append(result)
             if result.get("changed"):
                 changed += 1
-            self._emit_state_report()
+            if server.key not in reported_server_keys:
+                reported_server_keys.append(server.key)
+            self._emit_state_report([server.key])
             if action == "start":
-                self._wait_before_next_batch_start(servers, index)
+                self._wait_before_next_batch_start(servers, index, reported_server_keys)
 
         return {
             "changed": changed,
@@ -937,6 +955,7 @@ class DockerRuntime:
 
         results = []
         changed = 0
+        reported_server_keys: list[str] = []
 
         for index, server in enumerate(servers):
             self._raise_if_cancel_requested()
@@ -946,8 +965,10 @@ class DockerRuntime:
             result["message"] = f"{server.container_name} recreated"
             results.append(result)
             changed += 1
-            self._emit_state_report()
-            self._wait_before_next_batch_start(servers, index)
+            if server.key not in reported_server_keys:
+                reported_server_keys.append(server.key)
+            self._emit_state_report([server.key])
+            self._wait_before_next_batch_start(servers, index, reported_server_keys)
 
         return {
             "changed": changed,
