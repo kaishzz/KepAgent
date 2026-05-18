@@ -415,6 +415,7 @@ class QueryServerInfoTests(unittest.TestCase):
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime._server_snapshot_lock = runtime_module.threading.Lock()
         runtime._server_snapshots = {}
+        runtime._server_snapshot_revision = 0
         runtime.inspect_server = lambda key: {
             "key": key,
             "status": "running",
@@ -428,6 +429,40 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(snapshot["key"], "ze_xl_1")
         self.assertEqual(runtime._server_snapshots["ze_xl_1"]["currentPlayers"], 12)
         self.assertIn("_refreshedAtMonotonic", runtime._server_snapshots["ze_xl_1"])
+        self.assertEqual(runtime._server_snapshots["ze_xl_1"]["_revision"], 1)
+
+    def test_refresh_worker_does_not_overwrite_newer_immediate_snapshot(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime.config = SimpleNamespace(
+            servers=[SimpleNamespace(key="ze_pt_test")],
+        )
+        runtime._server_snapshot_lock = runtime_module.threading.Lock()
+        runtime._server_snapshots = {}
+        runtime._server_snapshot_revision = 0
+        runtime._server_refresh_in_flight = True
+        runtime._server_refresh_requested_at = 100.0
+
+        DockerRuntime._remember_server_snapshot(runtime, {
+            "key": "ze_pt_test",
+            "status": "missing",
+            "containerStatus": "missing",
+            "currentPlayers": 0,
+        })
+
+        with runtime._server_snapshot_lock:
+            runtime._server_snapshots["ze_pt_test"]["_refreshedAtMonotonic"] = 101.0
+
+        runtime.inspect_server = lambda _key: {
+            "key": "ze_pt_test",
+            "status": "running",
+            "containerStatus": "running",
+            "currentPlayers": 12,
+        }
+
+        DockerRuntime._refresh_server_snapshots_worker(runtime)
+
+        self.assertEqual(runtime._server_snapshots["ze_pt_test"]["containerStatus"], "missing")
+        self.assertEqual(runtime._server_snapshots["ze_pt_test"]["currentPlayers"], 0)
 
     def test_build_summary_uses_provided_servers_without_refreshing_list(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)

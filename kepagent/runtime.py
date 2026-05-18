@@ -51,6 +51,7 @@ class DockerRuntime:
         self._server_snapshot_lock = threading.Lock()
         self._server_refresh_in_flight = False
         self._server_refresh_requested_at = 0.0
+        self._server_snapshot_revision = 0
 
     def _server_query_cache_ttl_seconds(self) -> int:
         return max(1, int(getattr(self.config, "server_query_cache_ttl_seconds", 5) or 5))
@@ -91,6 +92,8 @@ class DockerRuntime:
             if safe_snapshot.get("currentPlayers") is None:
                 safe_snapshot["currentPlayers"] = 0
 
+            self._server_snapshot_revision = getattr(self, "_server_snapshot_revision", 0) + 1
+            safe_snapshot["_revision"] = self._server_snapshot_revision
             safe_snapshot["_refreshedAtMonotonic"] = time.monotonic()
             self._server_snapshots[server_key] = safe_snapshot
 
@@ -137,14 +140,20 @@ class DockerRuntime:
 
     def _refresh_server_snapshots_worker(self) -> None:
         try:
-            next_snapshots: dict[str, dict[str, Any]] = {}
+            requested_at = getattr(self, "_server_refresh_requested_at", 0.0)
             for server in self.config.servers:
                 snapshot = self.inspect_server(server.key)
-                snapshot["_refreshedAtMonotonic"] = time.monotonic()
-                next_snapshots[server.key] = snapshot
+                snapshot_key = str(snapshot.get("key") or server.key).strip()
+                if not snapshot_key:
+                    continue
 
-            with self._server_snapshot_lock:
-                self._server_snapshots = next_snapshots
+                with self._server_snapshot_lock:
+                    previous = self._server_snapshots.get(snapshot_key, {}).copy()
+                    previous_refreshed_at = previous.get("_refreshedAtMonotonic")
+                    if isinstance(previous_refreshed_at, (int, float)) and float(previous_refreshed_at) > requested_at:
+                        continue
+
+                self._remember_server_snapshot(snapshot)
         finally:
             with self._server_snapshot_lock:
                 self._server_refresh_in_flight = False
