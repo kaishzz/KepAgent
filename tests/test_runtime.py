@@ -1,5 +1,6 @@
 import unittest
 import sys
+import subprocess
 import tempfile
 import time
 import types
@@ -631,6 +632,73 @@ class CheckValidateTests(unittest.TestCase):
                 logs,
             )
             self.assertIn(("info", "validate pipeline continued"), logs)
+
+
+class SteamcmdValidateStopConditionTests(unittest.TestCase):
+    def test_treats_unknown_terminal_state_after_verify_as_completion(self) -> None:
+        logs: list[tuple[str, str]] = []
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime._log_emitter = lambda message, level="info": logs.append((level, message))
+
+        stop_condition = runtime._build_steamcmd_validate_stop_condition()
+
+        self.assertFalse(
+            stop_condition(
+                "stdout",
+                "05-19 12:31:24 | Update state (0x5) verifying install, progress: 99.65 (65704421785 / 65933511279)",
+            )
+        )
+        self.assertTrue(
+            stop_condition(
+                "stdout",
+                "05-19 12:31:26 | Update state (0x0) unknown, progress: 0.00 (0 / 0)",
+            )
+        )
+        self.assertIn(
+            ("info", "Detected steamcmd terminal unknown state after verify, treating validate as complete"),
+            logs,
+        )
+
+    def test_does_not_stop_for_unknown_state_without_near_completion_verify(self) -> None:
+        runtime = DockerRuntime.__new__(DockerRuntime)
+        runtime._log_emitter = lambda *_args, **_kwargs: None
+
+        stop_condition = runtime._build_steamcmd_validate_stop_condition()
+
+        self.assertFalse(
+            stop_condition(
+                "stdout",
+                "05-19 12:31:26 | Update state (0x0) unknown, progress: 0.00 (0 / 0)",
+            )
+        )
+
+
+class PtyCleanupTests(unittest.TestCase):
+    def test_ensure_process_exited_kills_process_after_wait_timeout(self) -> None:
+        events: list[str] = []
+
+        class FakeProcess:
+            def __init__(self) -> None:
+                self._poll_calls = 0
+
+            def poll(self):
+                self._poll_calls += 1
+                if self._poll_calls == 1:
+                    return None
+                return 0
+
+            def wait(self, timeout=None):
+                events.append(f"wait:{timeout}")
+                if len(events) == 1:
+                    raise subprocess.TimeoutExpired(cmd=["steamcmd"], timeout=timeout)
+                return 0
+
+            def kill(self):
+                events.append("kill")
+
+        DockerRuntime._ensure_process_exited(FakeProcess(), timeout_seconds=5)
+
+        self.assertEqual(events, ["wait:5", "kill", "wait:5"])
 
 
 class CheckUpdateTests(unittest.TestCase):

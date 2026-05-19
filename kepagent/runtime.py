@@ -19,6 +19,12 @@ from .config import AgentConfig, MonitorProfile, PortBinding, ServerDefinition, 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 A2S_INFO_REQUEST = b"\xFF\xFF\xFF\xFFTSource Engine Query\x00"
+STEAMCMD_VALIDATE_VERIFY_PROGRESS_RE = re.compile(
+    r"Update state \(0x5\) verifying install, progress: ([0-9]+(?:\.[0-9]+)?)",
+)
+STEAMCMD_VALIDATE_UNKNOWN_STATE_RE = re.compile(
+    r"Update state \(0x0\) unknown, progress: 0\.00 \(0 / 0\)",
+)
 
 
 class CommandCancelled(RuntimeError):
@@ -450,6 +456,55 @@ class DockerRuntime:
             force=bool(request.get("force")),
         )
 
+    @staticmethod
+    def _ensure_process_exited(process: Any, *, timeout_seconds: int = 5) -> None:
+        if process.poll() is not None:
+            return
+
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=timeout_seconds)
+
+    def _build_steamcmd_validate_stop_condition(self) -> Callable[[str, str], bool]:
+        saw_verify_near_completion = False
+        completion_reported = False
+
+        def mark_complete(message: str) -> bool:
+            nonlocal completion_reported
+            if not completion_reported:
+                self._emit_log(message)
+                completion_reported = True
+            return True
+
+        def stop_condition(_stream_name: str, message: str) -> bool:
+            nonlocal saw_verify_near_completion
+            normalized = str(message or "").strip()
+            if not normalized:
+                return False
+
+            lowered = normalized.lower()
+            if "success!" in lowered and "fully installed" in lowered:
+                return mark_complete("Detected steamcmd completion marker, stopping PTY tail")
+
+            matched = STEAMCMD_VALIDATE_VERIFY_PROGRESS_RE.search(normalized)
+            if matched:
+                try:
+                    saw_verify_near_completion = float(matched.group(1)) >= 99.0
+                except ValueError:
+                    return False
+                return False
+
+            if saw_verify_near_completion and STEAMCMD_VALIDATE_UNKNOWN_STATE_RE.search(normalized):
+                return mark_complete(
+                    "Detected steamcmd terminal unknown state after verify, treating validate as complete"
+                )
+
+            return False
+
+        return stop_condition
+
     def _run_process(
         self,
         args: list[str],
@@ -626,11 +681,7 @@ class DockerRuntime:
                 return
 
             process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            self._ensure_process_exited(process, timeout_seconds=5)
 
         def handle_message(message: str) -> bool:
             nonlocal stopped_early
@@ -713,8 +764,7 @@ class DockerRuntime:
                 handle_message(buffer.strip())
         finally:
             os.close(master_fd)
-            if process.poll() is None:
-                process.wait(timeout=5)
+            self._ensure_process_exited(process, timeout_seconds=5)
 
         output = "\n".join(output_parts).strip()
         return {
@@ -1373,6 +1423,7 @@ class DockerRuntime:
             ],
             timeout_seconds=3600,
             use_pty=True,
+            stop_condition=self._build_steamcmd_validate_stop_condition(),
         )
         if not result["ok"]:
             raise RuntimeError(result["output"] or "steamcmd app_update failed")
