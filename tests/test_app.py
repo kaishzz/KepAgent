@@ -181,6 +181,143 @@ class ProcessOneCommandTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(appended_batches), 1)
 
+    def test_log_upload_failure_does_not_fail_command(self) -> None:
+        finished: dict[str, object] = {}
+        upload_attempts: list[list[dict[str, str]]] = []
+
+        class FakeClient:
+            def claim_command(self):
+                return {
+                    "id": "command-2",
+                    "commandType": "node.check_update",
+                    "payload": {},
+                }
+
+            def mark_command_started(self, _command_id: str):
+                return {"status": "RUNNING"}
+
+            def append_command_logs(self, _command_id: str, batch):
+                upload_attempts.append(list(batch))
+                raise RuntimeError("log upload timeout")
+
+            def send_heartbeat(self, _payload):
+                return {"success": True}
+
+            def finish_command(self, command_id: str, *, success: bool, result=None, **kwargs):
+                finished.update(
+                    {
+                        "command_id": command_id,
+                        "success": success,
+                        "result": result,
+                        "extra": kwargs,
+                    }
+                )
+
+        class FakeRuntime:
+            def set_cancel_reader(self, _reader):
+                return None
+
+            def set_log_emitter(self, _emitter):
+                return None
+
+            def set_state_reporter(self, _reporter):
+                return None
+
+            def list_servers(self):
+                return []
+
+            def build_summary(self, servers=None):
+                return {"configuredServers": 0, "runningServers": 0, "missingServers": 0}
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.config = types.SimpleNamespace(group_labels={}, group_order=[])
+        app.client = FakeClient()
+        app.runtime = FakeRuntime()
+        app.execute_command = lambda _command, logs: (
+            logs.append("Update detected") or {"ok": True, "result": {"message": "Monitor success", "updated": True}}
+        )
+
+        app.process_one_command()
+
+        self.assertEqual(finished["command_id"], "command-2")
+        self.assertTrue(finished["success"])
+        self.assertEqual(
+            finished["result"],
+            {"message": "Monitor success", "updated": True},
+        )
+        self.assertGreaterEqual(len(upload_attempts), 1)
+
+    def test_finish_timeout_after_success_does_not_mark_command_failed(self) -> None:
+        finished_attempts: list[dict[str, object]] = []
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self._finish_calls = 0
+
+            def claim_command(self):
+                return {
+                    "id": "command-3",
+                    "commandType": "node.check_update",
+                    "payload": {},
+                }
+
+            def mark_command_started(self, _command_id: str):
+                return {"status": "RUNNING"}
+
+            def append_command_logs(self, _command_id: str, _batch):
+                return None
+
+            def send_heartbeat(self, _payload):
+                return {"success": True}
+
+            def finish_command(self, command_id: str, *, success: bool, result=None, **kwargs):
+                self._finish_calls += 1
+                finished_attempts.append(
+                    {
+                        "command_id": command_id,
+                        "success": success,
+                        "result": result,
+                        "extra": kwargs,
+                    }
+                )
+                raise RuntimeError("finish timeout")
+
+            def fetch_command(self, _command_id: str):
+                return {"id": "command-3", "status": "SUCCEEDED"}
+
+        class FakeRuntime:
+            def set_cancel_reader(self, _reader):
+                return None
+
+            def set_log_emitter(self, _emitter):
+                return None
+
+            def set_state_reporter(self, _reporter):
+                return None
+
+            def list_servers(self):
+                return []
+
+            def build_summary(self, servers=None):
+                return {"configuredServers": 0, "runningServers": 0, "missingServers": 0}
+
+        app = KepAgentApp.__new__(KepAgentApp)
+        app.config = types.SimpleNamespace(group_labels={}, group_order=[])
+        app.client = FakeClient()
+        app.runtime = FakeRuntime()
+        app.execute_command = lambda _command, logs: (
+            logs.append("Monitor success") or {"ok": True, "result": {"message": "Monitor success", "updated": True}}
+        )
+
+        app.process_one_command()
+
+        self.assertEqual(len(finished_attempts), 1)
+        self.assertTrue(finished_attempts[0]["success"])
+        self.assertEqual(
+            finished_attempts[0]["result"],
+            {"message": "Monitor success", "updated": True},
+        )
+
 
 class ServerActionHandlerTests(unittest.TestCase):
     def test_uses_batch_server_keys_when_present(self) -> None:

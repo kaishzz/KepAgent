@@ -56,7 +56,10 @@ class LiveCommandLogger:
 
         while self._buffer:
             batch = self._buffer[:200]
-            self._emitter(batch)
+            try:
+                self._emitter(batch)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Command log upload failed: %s", exc)
             self._buffer = self._buffer[200:]
 
         self._last_flush_at = time.time()
@@ -146,6 +149,68 @@ class KepAgentApp:
             return
 
         self.client.append_command_logs(command_id, batch[:200])
+
+    @staticmethod
+    def _expected_finish_status(*, success: bool, cancelled: bool) -> str:
+        if cancelled:
+            return "CANCELLED"
+        return "SUCCEEDED" if success else "FAILED"
+
+    def _finish_command_safely(
+        self,
+        command_id: str,
+        *,
+        success: bool,
+        result: dict[str, Any] | list[Any] | str | None = None,
+        error_message: str | None = None,
+        cancelled: bool = False,
+        max_attempts: int = 2,
+    ) -> bool:
+        expected_status = self._expected_finish_status(success=success, cancelled=cancelled)
+
+        for attempt in range(max(1, max_attempts)):
+            try:
+                self.client.finish_command(
+                    command_id,
+                    success=success,
+                    result=result,
+                    error_message=error_message,
+                    cancelled=cancelled,
+                )
+                return True
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning(
+                    "Command finish report failed for %s (attempt %s/%s): %s",
+                    command_id,
+                    attempt + 1,
+                    max(1, max_attempts),
+                    exc,
+                )
+
+                fetch_command = getattr(self.client, "fetch_command", None)
+                if callable(fetch_command):
+                    try:
+                        command = fetch_command(command_id)
+                    except Exception as fetch_exc:  # noqa: BLE001
+                        LOGGER.debug(
+                            "Failed to verify command %s status after finish error: %s",
+                            command_id,
+                            fetch_exc,
+                        )
+                    else:
+                        current_status = str((command or {}).get("status") or "").strip().upper()
+                        if current_status == expected_status:
+                            LOGGER.warning(
+                                "Command %s already reached %s on control plane after finish error",
+                                command_id,
+                                expected_status,
+                            )
+                            return True
+
+                if attempt + 1 < max(1, max_attempts):
+                    time.sleep(1)
+
+        return False
 
     def _read_cancel_request(self, command_id: str) -> dict[str, Any] | None:
         try:
@@ -540,17 +605,18 @@ class KepAgentApp:
             logs.flush()
             self.report_runtime_state_safely()
             compact_result = self._compact_finish_result(command_type, execution.get("result"))
-            self.client.finish_command(
+            if not self._finish_command_safely(
                 command_id,
                 success=bool(execution.get("ok")),
                 result=compact_result,
-            )
+            ):
+                LOGGER.error("Command %s executed locally but finish report did not complete", command_id)
         except CommandCancelled as exc:
             LOGGER.warning("Command cancelled: %s", exc)
             logs.emit(str(exc), level="warning")
             logs.flush()
             self.report_runtime_state_safely()
-            self.client.finish_command(
+            if not self._finish_command_safely(
                 command_id,
                 success=False,
                 result={
@@ -560,17 +626,19 @@ class KepAgentApp:
                 },
                 error_message=str(exc),
                 cancelled=True,
-            )
+            ):
+                LOGGER.error("Cancelled command %s could not be reported to control plane", command_id)
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Command execution failed")
             logs.emit(f"Command failed: {exc}", level="error")
             logs.flush()
             self.report_runtime_state_safely()
-            self.client.finish_command(
+            if not self._finish_command_safely(
                 command_id,
                 success=False,
                 error_message=str(exc),
-            )
+            ):
+                LOGGER.error("Failed command %s could not be reported to control plane", command_id)
         finally:
             self.runtime.set_log_emitter(None)
             self.runtime.set_cancel_reader(None)
