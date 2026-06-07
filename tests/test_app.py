@@ -398,7 +398,7 @@ class HeartbeatPayloadTests(unittest.TestCase):
                 return {"configuredServers": 1, "runningServers": 1, "missingServers": 0}
 
         app = KepAgentApp.__new__(KepAgentApp)
-        app.config = types.SimpleNamespace(group_labels={"ze_xl": "训练服"}, group_order=["ze_xl"])
+        app.config = types.SimpleNamespace(group_labels={"2102": "训练服"}, group_order=["2102"])
         app.runtime = FakeRuntime()
 
         payload = app.build_heartbeat_payload()
@@ -416,7 +416,7 @@ class HeartbeatPayloadTests(unittest.TestCase):
 
             def list_servers(self, *, use_cached_only=False):
                 self.calls.append(("list_servers", use_cached_only))
-                return [{"key": "ze_xl_1", "state": "running", "currentPlayers": 12, "maxPlayers": 64}]
+                return [{"key": "ze_xl_1", "state": "running", "online": 12, "capacity": 64}]
 
             def refresh_server_snapshots_now(self, server_keys):
                 self.calls.append(("refresh_server_snapshots_now", list(server_keys)))
@@ -427,13 +427,13 @@ class HeartbeatPayloadTests(unittest.TestCase):
                 return {"configuredServers": 1, "runningServers": 1, "missingServers": 0}
 
         app = KepAgentApp.__new__(KepAgentApp)
-        app.config = types.SimpleNamespace(group_labels={"ze_xl": "训练服"}, group_order=["ze_xl"])
+        app.config = types.SimpleNamespace(group_labels={"2102": "训练服"}, group_order=["2102"])
         app.runtime = FakeRuntime()
 
         payload = app.build_heartbeat_payload(["ze_xl_1"])
 
-        self.assertEqual(payload["servers"][0]["currentPlayers"], 12)
-        self.assertEqual(payload["servers"][0]["maxPlayers"], 64)
+        self.assertEqual(payload["servers"][0]["online"], 12)
+        self.assertEqual(payload["servers"][0]["capacity"], 64)
         self.assertEqual(app.runtime.calls[0], ("refresh_server_snapshots_now", ["ze_xl_1"]))
         self.assertEqual(app.runtime.calls[1], ("list_servers", True))
 
@@ -478,8 +478,8 @@ class CompactServerSnapshotTests(unittest.TestCase):
                 "status": "running",
                 "containerStatus": "running",
                 "agentA2sStatus": "ok",
-                "currentPlayers": 12,
-                "maxPlayers": 64,
+                "online": 12,
+                "capacity": 64,
                 "map": "ze_mist",
                 "serverName": "训练服 1",
                 "queryPending": False,
@@ -490,8 +490,8 @@ class CompactServerSnapshotTests(unittest.TestCase):
 
         self.assertEqual(compact["containerStatus"], "running")
         self.assertEqual(compact["agentA2sStatus"], "ok")
-        self.assertEqual(compact["currentPlayers"], 12)
-        self.assertEqual(compact["maxPlayers"], 64)
+        self.assertEqual(compact["online"], 12)
+        self.assertEqual(compact["capacity"], 64)
         self.assertEqual(compact["map"], "ze_mist")
 
 

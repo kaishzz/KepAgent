@@ -18,7 +18,7 @@ KepAgent 是部署在 Linux 节点上的执行端代理程序，负责与 KepCs 
 - 训练服容器：`kepcs-ze-xl-<port>`
 - 跑图服容器：`kepcs-ze-pt-<port>`
 - 测试服容器：`kepcs-ze-xl-test-<port>`、`kepcs-ze-pt-test-<port>`
-- 默认分组：`all`、`ze_xl`、`ze_pt`、`ze_test`
+- 默认分组：`all`、`2102`、`2103`、`2192`、`2193`
 
 ## 当前职责
 
@@ -90,12 +90,12 @@ cp agent.example.yaml agent.yaml
 
 ```yaml
 monitor_profiles:
-  - key: "ze_xl"
+  - key: "2102"
     monitor_server_key: "ze_xl_1"
     start_server_keys:
       - "ze_xl_1"
       - "ze_xl_2"
-  - key: "ze_pt"
+  - key: "2103"
     monitor_server_key: "ze_pt_1"
     start_server_keys:
       - "ze_pt_1"
@@ -103,7 +103,7 @@ monitor_profiles:
 
 servers:
   - key: "ze_xl_test"
-    groups: ["ze_test"]
+    groups: ["2192"]
     start_after_monitor: false
 ```
 

@@ -8,10 +8,9 @@ request_timeout_seconds: 15
 batch_start_interval_seconds: "${KEPAGENT_BATCH_START_INTERVAL_SECONDS:-15}"
 docker_base_url: null
 group_labels:
-  kz: "攀岩服"
-  surf: "滑翔服"
-  bhop: "连跳服"
-group_order: ["kz", "surf", "bhop"]
+  2201: "攀岩服"
+  2301: "滑翔服"
+group_order: ["2201", "2301"]
 server_query_enabled: true
 server_query_host: "127.0.0.1"
 server_query_timeout_seconds: 2
@@ -29,7 +28,7 @@ monitor_recover_timeout_seconds: 120
 monitor_restart_threshold: 2
 # Mode-scoped crash checks. Each profile checks one monitor server and starts only its own configured servers after success.
 monitor_profiles:
-  - key: "kz"
+  - key: "2201"
     monitor_server_key: "kz_1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
@@ -37,7 +36,7 @@ monitor_profiles:
       - "kz_2"
       - "kz_3"
       - "kz_4"
-  - key: "surf"
+  - key: "2301"
     monitor_server_key: "surf_1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
@@ -50,7 +49,7 @@ servers:
   - key: "kz_1"
     container_name: "kepcs-kz-28010"
     image: "steamrt3:latest"
-    groups: ["kz"]
+    groups: ["2201"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -93,7 +92,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/cs2kz-server-config.txt"
         mode: "rw"
     labels:
-      kepcs.mode: "kz"
+      kepcs.mod: "2201"
       kepcs.server_key: "kz_1"
       kepcs.exec_cfg: "kz_1.cfg"
     restart_policy: "unless-stopped"
@@ -101,7 +100,7 @@ servers:
   - key: "kz_2"
     container_name: "kepcs-kz-28020"
     image: "steamrt3:latest"
-    groups: ["kz"]
+    groups: ["2201"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -144,7 +143,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/cs2kz-server-config.txt"
         mode: "rw"
     labels:
-      kepcs.mode: "kz"
+      kepcs.mod: "2201"
       kepcs.server_key: "kz_2"
       kepcs.exec_cfg: "kz_2.cfg"
     restart_policy: "unless-stopped"
@@ -152,7 +151,7 @@ servers:
   - key: "kz_3"
     container_name: "kepcs-kz-28030"
     image: "steamrt3:latest"
-    groups: ["kz"]
+    groups: ["2201"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -195,7 +194,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/cs2kz-server-config.txt"
         mode: "rw"
     labels:
-      kepcs.mode: "kz"
+      kepcs.mod: "2201"
       kepcs.server_key: "kz_3"
       kepcs.exec_cfg: "kz_3.cfg"
     restart_policy: "unless-stopped"
@@ -203,7 +202,7 @@ servers:
   - key: "kz_4"
     container_name: "kepcs-kz-28040"
     image: "steamrt3:latest"
-    groups: ["kz"]
+    groups: ["2201"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -246,7 +245,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/cs2kz-server-config.txt"
         mode: "rw"
     labels:
-      kepcs.mode: "kz"
+      kepcs.mod: "2201"
       kepcs.server_key: "kz_4"
       kepcs.exec_cfg: "kz_4.cfg"
     restart_policy: "unless-stopped"
@@ -254,7 +253,7 @@ servers:
   - key: "surf_1"
     container_name: "kepcs-surf-29010"
     image: "steamrt3:latest"
-    groups: ["surf"]
+    groups: ["2301"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -294,7 +293,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/multiaddonmanager"
         mode: "rw"
     labels:
-      kepcs.mode: "surf"
+      kepcs.mod: "2301"
       kepcs.server_key: "surf_1"
       kepcs.exec_cfg: "surf_1.cfg"
     restart_policy: "unless-stopped"
@@ -302,7 +301,7 @@ servers:
   - key: "surf_2"
     container_name: "kepcs-surf-29020"
     image: "steamrt3:latest"
-    groups: ["surf"]
+    groups: ["2301"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -342,7 +341,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/multiaddonmanager"
         mode: "rw"
     labels:
-      kepcs.mode: "surf"
+      kepcs.mod: "2301"
       kepcs.server_key: "surf_2"
       kepcs.exec_cfg: "surf_2.cfg"
     restart_policy: "unless-stopped"
@@ -350,7 +349,7 @@ servers:
   - key: "surf_3"
     container_name: "kepcs-surf-29030"
     image: "steamrt3:latest"
-    groups: ["surf"]
+    groups: ["2301"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -390,7 +389,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/multiaddonmanager"
         mode: "rw"
     labels:
-      kepcs.mode: "surf"
+      kepcs.mod: "2301"
       kepcs.server_key: "surf_3"
       kepcs.exec_cfg: "surf_3.cfg"
     restart_policy: "unless-stopped"
@@ -398,7 +397,7 @@ servers:
   - key: "surf_4"
     container_name: "kepcs-surf-29040"
     image: "steamrt3:latest"
-    groups: ["surf"]
+    groups: ["2301"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -438,7 +437,7 @@ servers:
         container_path: "/cs2/game/csgo/cfg/multiaddonmanager"
         mode: "rw"
     labels:
-      kepcs.mode: "surf"
+      kepcs.mod: "2301"
       kepcs.server_key: "surf_4"
       kepcs.exec_cfg: "surf_4.cfg"
     restart_policy: "unless-stopped"

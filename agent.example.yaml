@@ -8,10 +8,11 @@ request_timeout_seconds: 15
 batch_start_interval_seconds: "${KEPAGENT_BATCH_START_INTERVAL_SECONDS:-15}"
 docker_base_url: null
 group_labels:
-  ze_xl: "训练服"
-  ze_pt: "跑图服"
-  ze_test: "测试服"
-group_order: ["ze_xl", "ze_pt", "ze_test"]
+  2102: "训练服"
+  2103: "跑图服"
+  2192: "训练测试服"
+  2193: "跑图测试服"
+group_order: ["2102", "2103", "2192", "2193"]
 server_query_enabled: true
 server_query_host: "127.0.0.1"
 server_query_timeout_seconds: 2
@@ -29,7 +30,7 @@ monitor_recover_timeout_seconds: 120
 monitor_restart_threshold: 2
 # Mode-scoped crash checks. Each profile checks one monitor server and starts only its own configured servers after success.
 monitor_profiles:
-  - key: "ze_xl"
+  - key: "2102"
     monitor_server_key: "ze_xl_1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
@@ -39,7 +40,7 @@ monitor_profiles:
       - "ze_xl_4"
       - "ze_xl_5"
       - "ze_xl_6"
-  - key: "ze_pt"
+  - key: "2103"
     monitor_server_key: "ze_pt_1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
@@ -53,7 +54,7 @@ servers:
   - key: "ze_xl_1"
     container_name: "kepcs-ze-xl-28010"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -84,7 +85,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_1"
       kepcs.exec_cfg: "ze_xl_1.cfg"
     restart_policy: "unless-stopped"
@@ -92,7 +93,7 @@ servers:
   - key: "ze_xl_2"
     container_name: "kepcs-ze-xl-28020"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -126,7 +127,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_2"
       kepcs.exec_cfg: "ze_xl_2.cfg"
     restart_policy: "unless-stopped"
@@ -134,7 +135,7 @@ servers:
   - key: "ze_xl_3"
     container_name: "kepcs-ze-xl-28030"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -165,7 +166,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_3"
       kepcs.exec_cfg: "ze_xl_3.cfg"
     restart_policy: "unless-stopped"
@@ -173,7 +174,7 @@ servers:
   - key: "ze_xl_4"
     container_name: "kepcs-ze-xl-28040"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -204,7 +205,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_4"
       kepcs.exec_cfg: "ze_xl_4.cfg"
     restart_policy: "unless-stopped"
@@ -212,7 +213,7 @@ servers:
   - key: "ze_xl_5"
     container_name: "kepcs-ze-xl-28050"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -243,7 +244,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_5"
       kepcs.exec_cfg: "ze_xl_5.cfg"
     restart_policy: "unless-stopped"
@@ -251,7 +252,7 @@ servers:
   - key: "ze_xl_6"
     container_name: "kepcs-ze-xl-28060"
     image: "steamrt3:latest"
-    groups: ["ze_xl"]
+    groups: ["2102"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -282,7 +283,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2102"
       kepcs.server_key: "ze_xl_6"
       kepcs.exec_cfg: "ze_xl_6.cfg"
     restart_policy: "unless-stopped"
@@ -290,7 +291,7 @@ servers:
   - key: "ze_pt_1"
     container_name: "kepcs-ze-pt-29010"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -324,7 +325,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_1"
       kepcs.exec_cfg: "ze_pt_1.cfg"
     restart_policy: "unless-stopped"
@@ -332,7 +333,7 @@ servers:
   - key: "ze_pt_2"
     container_name: "kepcs-ze-pt-29020"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -366,7 +367,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_2"
       kepcs.exec_cfg: "ze_pt_2.cfg"
     restart_policy: "unless-stopped"
@@ -374,7 +375,7 @@ servers:
   - key: "ze_pt_3"
     container_name: "kepcs-ze-pt-29030"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -408,7 +409,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_3"
       kepcs.exec_cfg: "ze_pt_3.cfg"
     restart_policy: "unless-stopped"
@@ -416,7 +417,7 @@ servers:
   - key: "ze_pt_4"
     container_name: "kepcs-ze-pt-29040"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -450,7 +451,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_4"
       kepcs.exec_cfg: "ze_pt_4.cfg"
     restart_policy: "unless-stopped"
@@ -458,7 +459,7 @@ servers:
   - key: "ze_pt_5"
     container_name: "kepcs-ze-pt-29050"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -492,7 +493,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_5"
       kepcs.exec_cfg: "ze_pt_5.cfg"
     restart_policy: "unless-stopped"
@@ -500,7 +501,7 @@ servers:
   - key: "ze_pt_6"
     container_name: "kepcs-ze-pt-29060"
     image: "steamrt3:latest"
-    groups: ["ze_pt"]
+    groups: ["2103"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -534,7 +535,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2103"
       kepcs.server_key: "ze_pt_6"
       kepcs.exec_cfg: "ze_pt_6.cfg"
     restart_policy: "unless-stopped"
@@ -542,7 +543,7 @@ servers:
   - key: "ze_pt_stp"
     container_name: "kepcs-ze-pt-stp-31010"
     image: "steamrt3:latest"
-    groups: ["ze_test"]
+    groups: ["2193"]
     start_after_monitor: true
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -576,7 +577,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2193"
       kepcs.server_key: "ze_pt_stp"
       kepcs.exec_cfg: "ze_pt_stp.cfg"
     restart_policy: "unless-stopped"
@@ -584,7 +585,7 @@ servers:
   - key: "ze_xl_test"
     container_name: "kepcs-ze-xl-test-32010"
     image: "steamrt3:latest"
-    groups: ["ze_test"]
+    groups: ["2192"]
     start_after_monitor: false
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -618,7 +619,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_xl"
+      kepcs.mod: "2192"
       kepcs.server_key: "ze_xl_test"
       kepcs.exec_cfg: "ze_xl_test.cfg"
     restart_policy: "unless-stopped"
@@ -626,7 +627,7 @@ servers:
   - key: "ze_pt_test"
     container_name: "kepcs-ze-pt-test-32020"
     image: "steamrt3:latest"
-    groups: ["ze_test"]
+    groups: ["2193"]
     start_after_monitor: false
     entrypoint: ["/entrypoint.sh"]
     stdin_open: true
@@ -663,7 +664,7 @@ servers:
         container_path: "/entrypoint.sh"
         mode: "rw"
     labels:
-      kepcs.mode: "ze_pt"
+      kepcs.mod: "2193"
       kepcs.server_key: "ze_pt_test"
       kepcs.exec_cfg: "ze_pt_test.cfg"
     restart_policy: "unless-stopped"

@@ -133,8 +133,8 @@ class QueryServerInfoTests(unittest.TestCase):
 
         self.assertEqual(result["serverName"], "KepCs ZE")
         self.assertEqual(result["map"], "ze_example")
-        self.assertEqual(result["currentPlayers"], 12)
-        self.assertEqual(result["maxPlayers"], 64)
+        self.assertEqual(result["online"], 12)
+        self.assertEqual(result["capacity"], 64)
 
     def test_inspect_server_includes_query_info(self) -> None:
         class FakeContainer:
@@ -156,17 +156,17 @@ class QueryServerInfoTests(unittest.TestCase):
             key="ze_xl_1",
             catalog_server_id="catalog-1",
             container_name="kepcs-ze-xl-28010",
-            groups=["ze_xl"],
+            groups=["2102"],
             image="steamrt3:latest",
-            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+            labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
         )
         runtime._get_container = lambda _name: FakeContainer()
         runtime._server_query_port = lambda _server: 28010
         runtime._query_server_info = lambda _server: {
             "serverName": "KepCs ZE",
             "map": "ze_example",
-            "currentPlayers": 12,
-            "maxPlayers": 64,
+            "online": 12,
+            "capacity": 64,
             "visibility": 0,
         }
 
@@ -176,14 +176,14 @@ class QueryServerInfoTests(unittest.TestCase):
         self.assertEqual(result["catalogServerId"], "catalog-1")
         self.assertIsNone(result["host"])
         self.assertEqual(result["queryHost"], "127.0.0.1")
-        self.assertEqual(result["mode"], "ze_xl")
+        self.assertEqual(result["mod"], "2102")
         self.assertEqual(result["containerStatus"], "running")
         self.assertEqual(result["agentA2sStatus"], "ok")
         self.assertIsNone(result["agentA2sError"])
         self.assertEqual(result["serverName"], "KepCs ZE")
         self.assertEqual(result["map"], "ze_example")
-        self.assertEqual(result["currentPlayers"], 12)
-        self.assertEqual(result["maxPlayers"], 64)
+        self.assertEqual(result["online"], 12)
+        self.assertEqual(result["capacity"], 64)
 
     def test_inspect_server_marks_local_timeout_without_hiding_running_container(self) -> None:
         class FakeContainer:
@@ -205,9 +205,9 @@ class QueryServerInfoTests(unittest.TestCase):
             key="ze_xl_1",
             catalog_server_id="catalog-1",
             container_name="kepcs-ze-xl-28010",
-            groups=["ze_xl"],
+            groups=["2102"],
             image="steamrt3:latest",
-            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+            labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
         )
         runtime._get_container = lambda _name: FakeContainer()
         runtime._server_query_port = lambda _server: 28010
@@ -239,9 +239,9 @@ class QueryServerInfoTests(unittest.TestCase):
             key="ze_xl_1",
             catalog_server_id="catalog-1",
             container_name="kepcs-ze-xl-28010",
-            groups=["ze_xl"],
+            groups=["2102"],
             image="steamrt3:latest",
-            labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+            labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
             ports=[SimpleNamespace(host_port=28010, protocol="udp")],
         )
         runtime.config = SimpleNamespace(server_query_host="127.0.0.1")
@@ -265,9 +265,9 @@ class QueryServerInfoTests(unittest.TestCase):
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
                     container_name="kepcs-ze-xl-28010",
-                    groups=["ze_xl"],
+                    groups=["2102"],
                     image="steamrt3:latest",
-                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
                     ports=[SimpleNamespace(host_port=28010, protocol="udp")],
                 ),
             ],
@@ -299,9 +299,9 @@ class QueryServerInfoTests(unittest.TestCase):
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
                     container_name="kepcs-ze-xl-28010",
-                    groups=["ze_xl"],
+                    groups=["2102"],
                     image="steamrt3:latest",
-                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
                     ports=[SimpleNamespace(host_port=28010, protocol="udp")],
                 ),
             ],
@@ -337,9 +337,9 @@ class QueryServerInfoTests(unittest.TestCase):
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
                     container_name="kepcs-ze-xl-28010",
-                    groups=["ze_xl"],
+                    groups=["2102"],
                     image="steamrt3:latest",
-                    labels={"kepcs.mode": "ze_xl", "kepcs.server_key": "ze_xl_1"},
+                    labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
                     ports=[SimpleNamespace(host_port=28010, protocol="udp")],
                 ),
             ],
@@ -421,14 +421,14 @@ class QueryServerInfoTests(unittest.TestCase):
             "key": key,
             "status": "running",
             "containerStatus": "running",
-            "currentPlayers": 12,
-            "maxPlayers": 64,
+            "online": 12,
+            "capacity": 64,
         }
 
         snapshot = DockerRuntime._refresh_server_snapshot_now(runtime, "ze_xl_1")
 
         self.assertEqual(snapshot["key"], "ze_xl_1")
-        self.assertEqual(runtime._server_snapshots["ze_xl_1"]["currentPlayers"], 12)
+        self.assertEqual(runtime._server_snapshots["ze_xl_1"]["online"], 12)
         self.assertIn("_refreshedAtMonotonic", runtime._server_snapshots["ze_xl_1"])
         self.assertEqual(runtime._server_snapshots["ze_xl_1"]["_revision"], 1)
 
@@ -447,7 +447,7 @@ class QueryServerInfoTests(unittest.TestCase):
             "key": "ze_pt_test",
             "status": "missing",
             "containerStatus": "missing",
-            "currentPlayers": 0,
+            "online": 0,
         })
 
         with runtime._server_snapshot_lock:
@@ -457,13 +457,13 @@ class QueryServerInfoTests(unittest.TestCase):
             "key": "ze_pt_test",
             "status": "running",
             "containerStatus": "running",
-            "currentPlayers": 12,
+            "online": 12,
         }
 
         DockerRuntime._refresh_server_snapshots_worker(runtime)
 
         self.assertEqual(runtime._server_snapshots["ze_pt_test"]["containerStatus"], "missing")
-        self.assertEqual(runtime._server_snapshots["ze_pt_test"]["currentPlayers"], 0)
+        self.assertEqual(runtime._server_snapshots["ze_pt_test"]["online"], 0)
 
     def test_refresh_worker_does_not_overwrite_newer_immediate_start_snapshot(self) -> None:
         runtime = DockerRuntime.__new__(DockerRuntime)
@@ -481,7 +481,7 @@ class QueryServerInfoTests(unittest.TestCase):
             "status": "running",
             "containerStatus": "running",
             "agentA2sStatus": "ok",
-            "currentPlayers": 0,
+            "online": 0,
         })
 
         with runtime._server_snapshot_lock:
@@ -491,7 +491,7 @@ class QueryServerInfoTests(unittest.TestCase):
             "key": "ze_pt_test",
             "status": "missing",
             "containerStatus": "missing",
-            "currentPlayers": 0,
+            "online": 0,
         }
 
         DockerRuntime._refresh_server_snapshots_worker(runtime)
@@ -515,7 +515,7 @@ class QueryServerInfoTests(unittest.TestCase):
             "status": "running",
             "containerStatus": "running",
             "restartCount": 2,
-            "currentPlayers": 0,
+            "online": 0,
         })
 
         with runtime._server_snapshot_lock:
@@ -526,7 +526,7 @@ class QueryServerInfoTests(unittest.TestCase):
             "status": "exited",
             "containerStatus": "exited",
             "restartCount": 1,
-            "currentPlayers": 0,
+            "online": 0,
         }
 
         DockerRuntime._refresh_server_snapshots_worker(runtime)
@@ -750,8 +750,8 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime.config = SimpleNamespace(
             servers=[
-                SimpleNamespace(key="ze_xl_1", groups=["all", "ze_xl"], start_after_monitor=True),
-                SimpleNamespace(key="ze_pt_1", groups=["all", "ze_pt"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_1", groups=["all", "2102"], start_after_monitor=True),
+                SimpleNamespace(key="ze_pt_1", groups=["all", "2103"], start_after_monitor=True),
                 SimpleNamespace(key="ze_xl_test", groups=["test"], start_after_monitor=False),
                 SimpleNamespace(key="ze_pt_test", groups=["test"], start_after_monitor=False),
             ]
@@ -766,13 +766,13 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime.config = SimpleNamespace(
             servers=[
-                SimpleNamespace(key="ze_xl_1", groups=["ze_xl"], start_after_monitor=True),
-                SimpleNamespace(key="ze_xl_2", groups=["ze_xl"], start_after_monitor=True),
-                SimpleNamespace(key="ze_pt_1", groups=["ze_pt"], start_after_monitor=True),
-                SimpleNamespace(key="ze_xl_test", groups=["ze_xl", "test"], start_after_monitor=False),
+                SimpleNamespace(key="ze_xl_1", groups=["2102"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_2", groups=["2102"], start_after_monitor=True),
+                SimpleNamespace(key="ze_pt_1", groups=["2103"], start_after_monitor=True),
+                SimpleNamespace(key="ze_xl_test", groups=["2102", "test"], start_after_monitor=False),
             ]
         )
-        profile = SimpleNamespace(key="ze_xl", monitor_server_key="ze_xl_1", start_server_keys=None)
+        profile = SimpleNamespace(key="2102", monitor_server_key="ze_xl_1", start_server_keys=None)
 
         self.assertEqual(
             runtime._default_profile_start_server_keys(profile),
@@ -802,8 +802,8 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
         runtime = DockerRuntime.__new__(DockerRuntime)
         runtime.config = SimpleNamespace(
             monitor_profiles=[
-                SimpleNamespace(key="ze_xl", monitor_server_key="ze_xl_1", start_server_keys=None),
-                SimpleNamespace(key="ze_pt", monitor_server_key="ze_pt_1", start_server_keys=None),
+                SimpleNamespace(key="2102", monitor_server_key="ze_xl_1", start_server_keys=None),
+                SimpleNamespace(key="2103", monitor_server_key="ze_pt_1", start_server_keys=None),
             ],
         )
         runtime._raise_if_cancel_requested = lambda: None
@@ -834,12 +834,12 @@ class DefaultStartServerSelectionTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
-                ("ze_xl_1", ["ze_xl_1", "ze_xl_2"]),
-                ("ze_pt_1", ["ze_pt_1", "ze_pt_2"]),
+                ("ze_xl_1", ["2102_1", "2102_2"]),
+                ("ze_pt_1", ["2103_1", "2103_2"]),
             ],
         )
-        self.assertEqual(result["profileResults"][0]["profileKey"], "ze_xl")
-        self.assertEqual(result["profileResults"][1]["profileKey"], "ze_pt")
+        self.assertEqual(result["profileResults"][0]["profileKey"], "2102")
+        self.assertEqual(result["profileResults"][1]["profileKey"], "2103")
         self.assertFalse(result["profileResults"][1]["ok"])
 
 

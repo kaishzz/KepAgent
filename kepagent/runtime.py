@@ -91,12 +91,12 @@ class DockerRuntime:
 
             if previous:
                 previous_payload = self._strip_snapshot_meta(previous)
-                for field in ("serverName", "map", "maxPlayers", "visibility"):
+                for field in ("serverName", "map", "capacity", "visibility"):
                     if safe_snapshot.get(field) in (None, "") and previous_payload.get(field) not in (None, ""):
                         safe_snapshot[field] = previous_payload.get(field)
 
-            if safe_snapshot.get("currentPlayers") is None:
-                safe_snapshot["currentPlayers"] = 0
+            if safe_snapshot.get("online") is None:
+                safe_snapshot["online"] = 0
 
             self._server_snapshot_revision = getattr(self, "_server_snapshot_revision", 0) + 1
             safe_snapshot["_revision"] = self._server_snapshot_revision
@@ -119,7 +119,7 @@ class DockerRuntime:
             "primaryPort": primary_port,
             "host": None,
             "queryHost": query_host,
-            "mode": str(server.labels.get("kepcs.mode") or "").strip(),
+            "mod": str(server.labels.get("kepcs.mod") or "").strip(),
             "name": str(server.labels.get("kepcs.server_key") or server.key).strip(),
         }
 
@@ -287,7 +287,7 @@ class DockerRuntime:
         offset += 2  # app id
         players = payload[offset]
         offset += 1
-        max_players = payload[offset]
+        capacity = payload[offset]
         offset += 1
         _bots = payload[offset]
         offset += 1
@@ -302,8 +302,8 @@ class DockerRuntime:
         return {
             "serverName": server_name.strip(),
             "map": map_name.strip(),
-            "currentPlayers": int(players),
-            "maxPlayers": int(max_players),
+            "online": int(players),
+            "capacity": int(capacity),
             "visibility": int(visibility),
         }
 
