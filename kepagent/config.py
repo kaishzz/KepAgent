@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
@@ -42,6 +42,15 @@ class ServerDefinition(BaseModel):
     tty: bool = False
     restart_policy: str = "unless-stopped"
 
+    @field_validator("groups", mode="before")
+    @classmethod
+    def normalize_groups(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return value
+
 
 class MonitorProfile(BaseModel):
     key: str
@@ -75,6 +84,24 @@ class AgentConfig(BaseModel):
     monitor_restart_threshold: int = 2
     monitor_profiles: list[MonitorProfile] = Field(default_factory=list)
     servers: list[ServerDefinition] = Field(default_factory=list)
+
+    @field_validator("group_labels", mode="before")
+    @classmethod
+    def normalize_group_labels(cls, value: Any) -> Any:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return {str(key): str(label) for key, label in value.items()}
+        return value
+
+    @field_validator("group_order", mode="before")
+    @classmethod
+    def normalize_group_order(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return value
 
 
 def _strip_optional_quotes(value: str) -> str:
