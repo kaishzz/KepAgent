@@ -155,7 +155,7 @@ class QueryServerInfoTests(unittest.TestCase):
         runtime.get_server = lambda _key: SimpleNamespace(
             key="ze_xl_1",
             catalog_server_id="catalog-1",
-            container_name="kepcs-ze-xl-28010",
+            container_name="kepcs-2102-1",
             groups=["2102"],
             image="steamrt3:latest",
             labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -204,7 +204,7 @@ class QueryServerInfoTests(unittest.TestCase):
         runtime.get_server = lambda _key: SimpleNamespace(
             key="ze_xl_1",
             catalog_server_id="catalog-1",
-            container_name="kepcs-ze-xl-28010",
+            container_name="kepcs-2102-1",
             groups=["2102"],
             image="steamrt3:latest",
             labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -238,7 +238,7 @@ class QueryServerInfoTests(unittest.TestCase):
         runtime.get_server = lambda _key: SimpleNamespace(
             key="ze_xl_1",
             catalog_server_id="catalog-1",
-            container_name="kepcs-ze-xl-28010",
+            container_name="kepcs-2102-1",
             groups=["2102"],
             image="steamrt3:latest",
             labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -264,7 +264,7 @@ class QueryServerInfoTests(unittest.TestCase):
                 SimpleNamespace(
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
-                    container_name="kepcs-ze-xl-28010",
+                    container_name="kepcs-2102-1",
                     groups=["2102"],
                     image="steamrt3:latest",
                     labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -298,7 +298,7 @@ class QueryServerInfoTests(unittest.TestCase):
                 SimpleNamespace(
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
-                    container_name="kepcs-ze-xl-28010",
+                    container_name="kepcs-2102-1",
                     groups=["2102"],
                     image="steamrt3:latest",
                     labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -336,7 +336,7 @@ class QueryServerInfoTests(unittest.TestCase):
                 SimpleNamespace(
                     key="ze_xl_1",
                     catalog_server_id="catalog-1",
-                    container_name="kepcs-ze-xl-28010",
+                    container_name="kepcs-2102-1",
                     groups=["2102"],
                     image="steamrt3:latest",
                     labels={"kepcs.mod": "2102", "kepcs.server_key": "ze_xl_1"},
@@ -852,7 +852,7 @@ class RestartServerTests(unittest.TestCase):
                 calls.append(("remove", force))
 
         runtime = DockerRuntime.__new__(DockerRuntime)
-        runtime.get_server = lambda key: SimpleNamespace(container_name="kepcs-ze-xl-28010")
+        runtime.get_server = lambda key: SimpleNamespace(container_name="kepcs-2102-1")
         runtime._get_container = lambda name: calls.append(("get_container", name)) or FakeContainer()
         runtime.start_server = lambda key: calls.append(("start_server", key)) or {
             "changed": False,
@@ -865,14 +865,14 @@ class RestartServerTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
-                ("get_container", "kepcs-ze-xl-28010"),
+                ("get_container", "kepcs-2102-1"),
                 ("remove", True),
                 ("start_server", "ze_xl_1"),
             ],
         )
         self.assertTrue(result["changed"])
         self.assertTrue(result["removed"])
-        self.assertEqual(result["message"], "kepcs-ze-xl-28010 recreated")
+        self.assertEqual(result["message"], "kepcs-2102-1 recreated")
 
 
 class BatchStartIntervalTests(unittest.TestCase):
@@ -1004,8 +1004,8 @@ class BatchStartIntervalTests(unittest.TestCase):
     def test_batch_restart_removes_all_before_delayed_starts(self) -> None:
         calls: list[tuple[str, object]] = []
         servers = [
-            SimpleNamespace(key="ze_xl_1", container_name="kepcs-ze-xl-28010"),
-            SimpleNamespace(key="ze_xl_2", container_name="kepcs-ze-xl-28020"),
+            SimpleNamespace(key="ze_xl_1", container_name="kepcs-2102-1"),
+            SimpleNamespace(key="ze_xl_2", container_name="kepcs-2102-2"),
         ]
 
         class FakeContainer:
@@ -1036,10 +1036,10 @@ class BatchStartIntervalTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
-                ("get_container", "kepcs-ze-xl-28010"),
-                ("remove:kepcs-ze-xl-28010", True),
-                ("get_container", "kepcs-ze-xl-28020"),
-                ("remove:kepcs-ze-xl-28020", True),
+                ("get_container", "kepcs-2102-1"),
+                ("remove:kepcs-2102-1", True),
+                ("get_container", "kepcs-2102-2"),
+                ("remove:kepcs-2102-2", True),
                 ("start", "ze_xl_1"),
                 ("sleep", 1),
                 ("sleep", 1),
@@ -1048,7 +1048,7 @@ class BatchStartIntervalTests(unittest.TestCase):
         )
         self.assertEqual(result["changed"], 2)
         self.assertTrue(result["results"][0]["removed"])
-        self.assertEqual(result["results"][0]["message"], "kepcs-ze-xl-28010 recreated")
+        self.assertEqual(result["results"][0]["message"], "kepcs-2102-1 recreated")
 
 
 class RconPasswordTests(unittest.TestCase):

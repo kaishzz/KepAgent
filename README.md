@@ -15,9 +15,7 @@ KepAgent 是部署在 Linux 节点上的执行端代理程序，负责与 KepCs 
 - 训练服键值：`ze_xl_1` 到 `ze_xl_6`
 - 跑图服键值：`ze_pt_1` 到 `ze_pt_6`
 - 测试服键值：`ze_xl_test`、`ze_pt_test`
-- 训练服容器：`kepcs-ze-xl-<port>`
-- 跑图服容器：`kepcs-ze-pt-<port>`
-- 测试服容器：`kepcs-ze-xl-test-<port>`、`kepcs-ze-pt-test-<port>`
+- 容器名：`kepcs-<mod>-<slot>`，例如 `kepcs-2102-1`、`kepcs-2193-2`
 - 默认分组：`all`、`2102`、`2103`、`2192`、`2193`
 
 ## 当前职责
@@ -74,7 +72,7 @@ cp agent.example.yaml agent.yaml
 
 `agent.yaml` 当前用于描述：
 
-- 服务器键值与容器名
+- 服务器键值、服位 `slot` 与容器名
 - 镜像、端口、挂载、环境变量
 - 分组与分组显示名
 - 默认轮询和心跳节奏（当前示例默认 `poll_interval_seconds: 1`、`heartbeat_interval_seconds: 1`）
@@ -103,9 +101,13 @@ monitor_profiles:
 
 servers:
   - key: "ze_xl_test"
+    slot: 1
+    container_name: ""
     groups: ["2192"]
     start_after_monitor: false
 ```
+
+`servers[].container_name` 可以省略；省略时必须配置 `slot`，并通过 `labels.kepcs.mod` 或 `groups[0]` 提供模式编号，Agent 会自动生成 `kepcs-<mod>-<slot>`。
 
 RCON 密码只使用控制平面命令载荷（payload）透传的值；KepCs 控制台会从服务器目录数据库读取对应服务器的 RCON 密码后随命令下发。未下发密码的目标会在执行 RCON 时返回 `RCON password is empty`
 

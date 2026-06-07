@@ -47,7 +47,8 @@ monitor_profiles:
 
 servers:
   - key: "kz_1"
-    container_name: "kepcs-kz-28010"
+    container_name: ""
+    slot: 1
     image: "steamrt3:latest"
     groups: ["2201"]
     start_after_monitor: true
@@ -98,7 +99,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "kz_2"
-    container_name: "kepcs-kz-28020"
+    container_name: ""
+    slot: 2
     image: "steamrt3:latest"
     groups: ["2201"]
     start_after_monitor: true
@@ -149,7 +151,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "kz_3"
-    container_name: "kepcs-kz-28030"
+    container_name: ""
+    slot: 3
     image: "steamrt3:latest"
     groups: ["2201"]
     start_after_monitor: true
@@ -200,7 +203,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "kz_4"
-    container_name: "kepcs-kz-28040"
+    container_name: ""
+    slot: 4
     image: "steamrt3:latest"
     groups: ["2201"]
     start_after_monitor: true
@@ -251,7 +255,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "surf_1"
-    container_name: "kepcs-surf-29010"
+    container_name: ""
+    slot: 1
     image: "steamrt3:latest"
     groups: ["2301"]
     start_after_monitor: true
@@ -299,7 +304,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "surf_2"
-    container_name: "kepcs-surf-29020"
+    container_name: ""
+    slot: 2
     image: "steamrt3:latest"
     groups: ["2301"]
     start_after_monitor: true
@@ -347,7 +353,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "surf_3"
-    container_name: "kepcs-surf-29030"
+    container_name: ""
+    slot: 3
     image: "steamrt3:latest"
     groups: ["2301"]
     start_after_monitor: true
@@ -395,7 +402,8 @@ servers:
     restart_policy: "unless-stopped"
 
   - key: "surf_4"
-    container_name: "kepcs-surf-29040"
+    container_name: ""
+    slot: 4
     image: "steamrt3:latest"
     groups: ["2301"]
     start_after_monitor: true

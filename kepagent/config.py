@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
@@ -26,7 +26,8 @@ class VolumeBinding(BaseModel):
 class ServerDefinition(BaseModel):
     key: str
     catalog_server_id: str | None = None
-    container_name: str
+    container_name: str | None = None
+    slot: int | None = Field(default=None, ge=1)
     image: str
     groups: list[str] = Field(default_factory=list)
     start_after_monitor: bool = True
@@ -50,6 +51,18 @@ class ServerDefinition(BaseModel):
         if isinstance(value, list):
             return [str(item) for item in value]
         return value
+
+    @model_validator(mode="after")
+    def derive_container_name(self) -> "ServerDefinition":
+        if self.container_name:
+            return self
+
+        mod = str(self.labels.get("kepcs.mod") or (self.groups[0] if self.groups else "")).strip()
+        if not mod or not self.slot:
+            raise ValueError("container_name 为空时必须配置 slot 和 kepcs.mod 或 groups")
+
+        self.container_name = f"kepcs-{mod}-{self.slot}"
+        return self
 
 
 class MonitorProfile(BaseModel):

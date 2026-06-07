@@ -43,7 +43,7 @@ class CompactFinishResultTests(unittest.TestCase):
             },
             "monitorServer": {
                 "key": "ze_xl_test",
-                "containerName": "kepcs-ze-xl-test-32010",
+                "containerName": "kepcs-2192-1",
                 "state": "running",
                 "status": "running",
                 "primaryPort": 32010,
@@ -64,7 +64,7 @@ class CompactFinishResultTests(unittest.TestCase):
                     "message": "started",
                     "server": {
                         "key": "ze_xl_test",
-                        "containerName": "kepcs-ze-xl-test-32010",
+                        "containerName": "kepcs-2192-1",
                         "state": "running",
                         "status": "running",
                         "primaryPort": 32010,
@@ -90,9 +90,9 @@ class CompactFinishResultTests(unittest.TestCase):
                                 else f"ze_pt_{index - 6}"
                             ),
                             "containerName": (
-                                f"kepcs-ze-xl-{28000 + index * 10}"
+                                f"kepcs-2102-{index}"
                                 if index <= 6
-                                else f"kepcs-ze-pt-{29000 + (index - 6) * 10}"
+                                else f"kepcs-2103-{index - 6}"
                             ),
                         },
                     }
@@ -473,7 +473,7 @@ class CompactServerSnapshotTests(unittest.TestCase):
         compact = KepAgentApp._compact_server_snapshot(
             {
                 "key": "ze_xl_1",
-                "containerName": "kepcs-ze-xl-28010",
+                "containerName": "kepcs-2102-1",
                 "state": "running",
                 "status": "running",
                 "containerStatus": "running",
