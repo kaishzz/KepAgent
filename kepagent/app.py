@@ -538,7 +538,7 @@ class KepAgentApp:
             targets=targets,
         )
         logs.append(result["message"])
-        return self._ok_result(logs, result)
+        return self._command_result(logs, result)
 
     def _handle_check_update(self, _payload: dict[str, Any], logs: LiveCommandLogger) -> dict[str, Any]:
         result = self.runtime.check_update()

@@ -411,7 +411,7 @@ class DockerRuntime:
         self._state_reporter = reporter
 
     def _emit_log(self, message: str, *, level: str = "info") -> None:
-        if self._log_emitter is None:
+        if getattr(self, "_log_emitter", None) is None:
             return
 
         self._log_emitter(str(message or ""), level=str(level or "info"))
@@ -1188,6 +1188,7 @@ class DockerRuntime:
             ok = False
             error_message = ""
             password = override_password_by_key.get(server.key)
+            self._emit_log(f"RCON {server.key}:{port} sending command")
             try:
                 if not str(password or "").strip():
                     raise RuntimeError("RCON password is empty")
@@ -1201,8 +1202,11 @@ class DockerRuntime:
                     response_text = str(client.run(command) or "").strip()
                 ok = True
                 success += 1
+                response_summary = f": {response_text}" if response_text else ""
+                self._emit_log(f"RCON {server.key}:{port} succeeded{response_summary}")
             except Exception as exc:  # noqa: BLE001
                 error_message = str(exc)
+                self._emit_log(f"RCON {server.key}:{port} failed: {error_message}", level="error")
 
             results.append(
                 {
@@ -1220,6 +1224,7 @@ class DockerRuntime:
             "total": len(results),
             "success": success,
             "failed": len(results) - success,
+            "ok": bool(results) and success == len(results),
             "results": results,
             "message": f"RCON sent to {len(results)} servers, success {success}, failed {len(results) - success}",
         }

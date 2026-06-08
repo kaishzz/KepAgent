@@ -1098,6 +1098,7 @@ class RconPasswordTests(unittest.TestCase):
 
         self.assertEqual(calls, [("127.0.0.1", 27015, "db-secret", 5, "status")])
         self.assertEqual(result["success"], 1)
+        self.assertTrue(result["ok"])
 
     def test_missing_payload_password_reports_empty(self) -> None:
         class FakeClient:
@@ -1130,6 +1131,7 @@ class RconPasswordTests(unittest.TestCase):
 
         self.assertEqual(result["success"], 0)
         self.assertEqual(result["failed"], 1)
+        self.assertFalse(result["ok"])
         self.assertEqual(result["results"][0]["error"], "RCON password is empty")
 
     def test_targets_without_server_keys_are_not_used_as_target_source(self) -> None:
@@ -1155,6 +1157,59 @@ class RconPasswordTests(unittest.TestCase):
         self.assertEqual(result["total"], 0)
         self.assertEqual(result["success"], 0)
         self.assertEqual(result["failed"], 0)
+        self.assertFalse(result["ok"])
+
+    def test_rcon_emits_per_server_logs_and_marks_partial_failure(self) -> None:
+        class FakeClient:
+            def __init__(self, _host: str, port: int, *, passwd: str, timeout: int) -> None:
+                self.port = port
+                self.passwd = passwd
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb) -> None:
+                return None
+
+            def run(self, command: str) -> str:
+                if self.port == 27016:
+                    raise RuntimeError("connection refused")
+                return f"{command} ok"
+
+        original_rcon = sys.modules.get("rcon")
+        sys.modules["rcon"] = types.SimpleNamespace(Client=FakeClient)
+        try:
+            logs: list[tuple[str, str]] = []
+            runtime = DockerRuntime.__new__(DockerRuntime)
+            runtime.config = SimpleNamespace(rcon_host="127.0.0.1", rcon_timeout_seconds=5)
+            runtime._raise_if_cancel_requested = lambda: None
+            runtime._server_primary_port = lambda server: server.port
+            runtime._servers_for_keys = lambda keys: [
+                SimpleNamespace(key=key, port=27015 if key == "ze_xl_1" else 27016)
+                for key in keys
+            ]
+            runtime.set_log_emitter(lambda message, level="info": logs.append((level, message)))
+
+            result = runtime.send_rcon_command(
+                "ALL",
+                "status",
+                server_keys=["ze_xl_1", "ze_xl_2"],
+                targets=[
+                    {"key": "ze_xl_1", "password": "db-secret"},
+                    {"key": "ze_xl_2", "password": "db-secret"},
+                ],
+            )
+        finally:
+            if original_rcon is None:
+                sys.modules.pop("rcon", None)
+            else:
+                sys.modules["rcon"] = original_rcon
+
+        self.assertEqual(result["success"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertFalse(result["ok"])
+        self.assertIn(("info", "RCON ze_xl_1:27015 succeeded: status ok"), logs)
+        self.assertIn(("error", "RCON ze_xl_2:27016 failed: connection refused"), logs)
 
 
 if __name__ == "__main__":
