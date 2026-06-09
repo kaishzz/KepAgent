@@ -21,7 +21,7 @@ steamcmd_sh: "/data/steamcmd/steamcmd.sh"
 cs2_root: "/data/cs2"
 app_id: 730
 # Single-profile fallback used only when monitor_profiles is empty.
-monitor_server_key: "kz_1"
+monitor_server_key: "2201-1"
 monitor_poll_interval_seconds: 5
 monitor_stable_seconds: 120
 monitor_recover_timeout_seconds: 120
@@ -29,24 +29,24 @@ monitor_restart_threshold: 2
 # Mode-scoped crash checks. Each profile checks one monitor server and starts only its own configured servers after success.
 monitor_profiles:
   - key: "2201"
-    monitor_server_key: "kz_1"
+    monitor_server_key: "2201-1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
-      - "kz_1"
-      - "kz_2"
-      - "kz_3"
-      - "kz_4"
+      - "2201-1"
+      - "2201-2"
+      - "2201-3"
+      - "2201-4"
   - key: "2301"
-    monitor_server_key: "surf_1"
+    monitor_server_key: "2301-1"
     # Servers started only after this profile passes crash check.
     start_server_keys:
-      - "surf_1"
-      - "surf_2"
-      - "surf_3"
-      - "surf_4"
+      - "2301-1"
+      - "2301-2"
+      - "2301-3"
+      - "2301-4"
 
 servers:
-  - key: "kz_1"
+  - key: "2201-1"
     container_name: ""
     slot: 1
     image: "steamrt3:latest"
@@ -60,7 +60,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kz_1.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kepcs_2201_1.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -94,11 +94,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2201"
-      kepcs.server_key: "kz_1"
-      kepcs.exec_cfg: "kz_1.cfg"
+      kepcs.server_key: "2201-1"
+      kepcs.exec_cfg: "kepcs_2201_1.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "kz_2"
+  - key: "2201-2"
     container_name: ""
     slot: 2
     image: "steamrt3:latest"
@@ -112,7 +112,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kz_2.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kepcs_2201_2.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -146,11 +146,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2201"
-      kepcs.server_key: "kz_2"
-      kepcs.exec_cfg: "kz_2.cfg"
+      kepcs.server_key: "2201-2"
+      kepcs.exec_cfg: "kepcs_2201_2.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "kz_3"
+  - key: "2201-3"
     container_name: ""
     slot: 3
     image: "steamrt3:latest"
@@ -164,7 +164,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kz_3.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kepcs_2201_3.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -198,11 +198,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2201"
-      kepcs.server_key: "kz_3"
-      kepcs.exec_cfg: "kz_3.cfg"
+      kepcs.server_key: "2201-3"
+      kepcs.exec_cfg: "kepcs_2201_3.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "kz_4"
+  - key: "2201-4"
     container_name: ""
     slot: 4
     image: "steamrt3:latest"
@@ -216,7 +216,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kz_4.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 28040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869530 +exec kepcs_2201_4.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -250,11 +250,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2201"
-      kepcs.server_key: "kz_4"
-      kepcs.exec_cfg: "kz_4.cfg"
+      kepcs.server_key: "2201-4"
+      kepcs.exec_cfg: "kepcs_2201_4.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "surf_1"
+  - key: "2301-1"
     container_name: ""
     slot: 1
     image: "steamrt3:latest"
@@ -268,7 +268,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec surf_1.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29010 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec kepcs_2301_1.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -299,11 +299,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2301"
-      kepcs.server_key: "surf_1"
-      kepcs.exec_cfg: "surf_1.cfg"
+      kepcs.server_key: "2301-1"
+      kepcs.exec_cfg: "kepcs_2301_1.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "surf_2"
+  - key: "2301-2"
     container_name: ""
     slot: 2
     image: "steamrt3:latest"
@@ -317,7 +317,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec surf_2.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29020 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec kepcs_2301_2.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -348,11 +348,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2301"
-      kepcs.server_key: "surf_2"
-      kepcs.exec_cfg: "surf_2.cfg"
+      kepcs.server_key: "2301-2"
+      kepcs.exec_cfg: "kepcs_2301_2.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "surf_3"
+  - key: "2301-3"
     container_name: ""
     slot: 3
     image: "steamrt3:latest"
@@ -366,7 +366,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec surf_3.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29030 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec kepcs_2301_3.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -397,11 +397,11 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2301"
-      kepcs.server_key: "surf_3"
-      kepcs.exec_cfg: "surf_3.cfg"
+      kepcs.server_key: "2301-3"
+      kepcs.exec_cfg: "kepcs_2301_3.cfg"
     restart_policy: "unless-stopped"
 
-  - key: "surf_4"
+  - key: "2301-4"
     container_name: ""
     slot: 4
     image: "steamrt3:latest"
@@ -415,7 +415,7 @@ servers:
     command:
       - "bash"
       - "-lc"
-      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec surf_4.cfg"
+      - "cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers 20 +game_type 0 +game_mode 0 +map de_dust2 -port 29040 -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection 3716869036 +exec kepcs_2301_4.cfg"
     env:
       TZ: "Asia/Shanghai"
     ports:
@@ -446,6 +446,6 @@ servers:
         mode: "rw"
     labels:
       kepcs.mod: "2301"
-      kepcs.server_key: "surf_4"
-      kepcs.exec_cfg: "surf_4.cfg"
+      kepcs.server_key: "2301-4"
+      kepcs.exec_cfg: "kepcs_2301_4.cfg"
     restart_policy: "unless-stopped"
