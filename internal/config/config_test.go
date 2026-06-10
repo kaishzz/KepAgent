@@ -132,7 +132,7 @@ servers:
 	}
 }
 
-func TestModeReplaceDoesNotDropServerOverrides(t *testing.T) {
+func TestServerOverridesModeAndDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	content := `
@@ -156,10 +156,6 @@ defaults:
       container_path: "/data/default"
 modes:
   "2102":
-    replace_env: true
-    replace_labels: true
-    replace_ports: true
-    replace_volumes: true
     stdin_open: false
     tty: false
     env:
@@ -204,16 +200,16 @@ servers:
 		t.Fatal(err)
 	}
 	server := cfg.Servers[0]
-	if server.Env["DEFAULT_ONLY"] != "" || server.Env["MODE_ONLY"] != "1" || server.Env["SERVER_ONLY"] != "1" || server.Env["SHARED"] != "server" {
+	if server.Env["DEFAULT_ONLY"] != "1" || server.Env["MODE_ONLY"] != "1" || server.Env["SERVER_ONLY"] != "1" || server.Env["SHARED"] != "server" {
 		t.Fatalf("unexpected env merge: %#v", server.Env)
 	}
 	if server.Labels["mode_only"] != "1" || server.Labels["server_only"] != "1" || server.Labels["source"] != "server" {
 		t.Fatalf("unexpected label merge: %#v", server.Labels)
 	}
-	if len(server.Ports) != 2 || server.Ports[0].HostPort != 2000 || server.Ports[1].HostPort != 3000 {
+	if len(server.Ports) != 3 || server.Ports[0].HostPort != 1000 || server.Ports[1].HostPort != 2000 || server.Ports[2].HostPort != 3000 {
 		t.Fatalf("unexpected port merge: %#v", server.Ports)
 	}
-	if len(server.Volumes) != 2 || server.Volumes[0].HostPath != "/mode" || server.Volumes[1].HostPath != "/server" {
+	if len(server.Volumes) != 3 || server.Volumes[0].HostPath != "/default" || server.Volumes[1].HostPath != "/mode" || server.Volumes[2].HostPath != "/server" {
 		t.Fatalf("unexpected volume merge: %#v", server.Volumes)
 	}
 	if !server.StdinOpen || !server.TTY {

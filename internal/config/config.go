@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -97,10 +96,6 @@ type ServerDefaults struct {
 	StartAfterMonitor *bool             `yaml:"start_after_monitor"`
 	MaxPlayers        int               `yaml:"maxplayers"`
 	CollectionID      string            `yaml:"collection_id"`
-	ReplaceEnv        bool              `yaml:"replace_env"`
-	ReplaceLabels     bool              `yaml:"replace_labels"`
-	ReplacePorts      bool              `yaml:"replace_ports"`
-	ReplaceVolumes    bool              `yaml:"replace_volumes"`
 }
 
 func (d *ServerDefaults) UnmarshalYAML(value *yaml.Node) error {
@@ -131,10 +126,6 @@ type Mode struct {
 	StdinOpen         *bool             `yaml:"stdin_open"`
 	TTY               *bool             `yaml:"tty"`
 	StartAfterMonitor *bool             `yaml:"start_after_monitor"`
-	ReplaceEnv        bool              `yaml:"replace_env"`
-	ReplaceLabels     bool              `yaml:"replace_labels"`
-	ReplacePorts      bool              `yaml:"replace_ports"`
-	ReplaceVolumes    bool              `yaml:"replace_volumes"`
 }
 
 func (s *Server) UnmarshalYAML(value *yaml.Node) error {
@@ -318,22 +309,22 @@ func applyDefaults(server *Server, defaults ServerDefaults) {
 	}
 	if len(server.Env) == 0 {
 		server.Env = cloneMap(defaults.Env)
-	} else if !defaults.ReplaceEnv {
+	} else {
 		server.Env = mergeMap(defaults.Env, server.Env)
 	}
 	if len(server.Ports) == 0 {
 		server.Ports = clonePorts(defaults.Ports)
-	} else if !defaults.ReplacePorts {
+	} else {
 		server.Ports = append(clonePorts(defaults.Ports), server.Ports...)
 	}
 	if len(server.Volumes) == 0 {
 		server.Volumes = cloneVolumes(defaults.Volumes)
-	} else if !defaults.ReplaceVolumes {
+	} else {
 		server.Volumes = append(cloneVolumes(defaults.Volumes), server.Volumes...)
 	}
 	if len(server.Labels) == 0 {
 		server.Labels = cloneMap(defaults.Labels)
-	} else if !defaults.ReplaceLabels {
+	} else {
 		server.Labels = mergeMap(defaults.Labels, server.Labels)
 	}
 	if server.WorkingDir == "" {
@@ -373,34 +364,18 @@ func applyMode(server *Server, mode Mode, original Server) {
 		server.MaxPlayers = mode.MaxPlayers
 	}
 	if len(mode.Env) > 0 {
-		base := server.Env
-		if mode.ReplaceEnv {
-			base = nil
-		}
-		server.Env = mergeMap(mergeMap(base, mode.Env), original.Env)
+		server.Env = mergeMap(mergeMap(server.Env, mode.Env), original.Env)
 	}
 	if len(mode.Ports) > 0 {
-		base := withoutTrailingPorts(server.Ports, original.Ports)
-		if mode.ReplacePorts {
-			base = nil
-		}
-		server.Ports = append(base, clonePorts(mode.Ports)...)
+		server.Ports = append(withoutTrailingPorts(server.Ports, original.Ports), clonePorts(mode.Ports)...)
 		server.Ports = append(server.Ports, clonePorts(original.Ports)...)
 	}
 	if len(mode.Volumes) > 0 {
-		base := withoutTrailingVolumes(server.Volumes, original.Volumes)
-		if mode.ReplaceVolumes {
-			base = nil
-		}
-		server.Volumes = append(base, cloneVolumes(mode.Volumes)...)
+		server.Volumes = append(withoutTrailingVolumes(server.Volumes, original.Volumes), cloneVolumes(mode.Volumes)...)
 		server.Volumes = append(server.Volumes, cloneVolumes(original.Volumes)...)
 	}
 	if len(mode.Labels) > 0 {
-		base := server.Labels
-		if mode.ReplaceLabels {
-			base = nil
-		}
-		server.Labels = mergeMap(mergeMap(base, mode.Labels), original.Labels)
+		server.Labels = mergeMap(mergeMap(server.Labels, mode.Labels), original.Labels)
 	}
 	if original.WorkingDir == "" && mode.WorkingDir != "" {
 		server.WorkingDir = mode.WorkingDir
@@ -561,48 +536,14 @@ func loadDotenv(path string) error {
 	return nil
 }
 
-func (p *PortBinding) UnmarshalYAML(value *yaml.Node) error {
-	type rawPort PortBinding
-	var raw rawPort
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*p = PortBinding(raw)
-	return nil
-}
-
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfig Config
 	var raw rawConfig = rawConfig(*defaultConfig())
-	if err := decodeFlexible(value, &raw); err != nil {
+	if err := value.Decode(&raw); err != nil {
 		return err
 	}
 	*c = Config(raw)
 	return nil
-}
-
-func decodeFlexible(node *yaml.Node, out any) error {
-	content, err := yaml.Marshal(node)
-	if err != nil {
-		return err
-	}
-	content = []byte(normalizeQuotedNumbers(string(content)))
-	return yaml.Unmarshal(content, out)
-}
-
-var quotedNumberLine = regexp.MustCompile(`(?m)^(\s*[A-Za-z0-9_]+:\s*)"(-?\d+)"\s*$`)
-
-func normalizeQuotedNumbers(input string) string {
-	return quotedNumberLine.ReplaceAllStringFunc(input, func(line string) string {
-		match := quotedNumberLine.FindStringSubmatch(line)
-		if len(match) != 3 {
-			return line
-		}
-		if _, err := strconv.Atoi(match[2]); err != nil {
-			return line
-		}
-		return match[1] + match[2]
-	})
 }
 
 func mappingHasKey(value *yaml.Node, key string) bool {
