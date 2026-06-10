@@ -1,12 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -36,6 +38,8 @@ type Config struct {
 	MonitorRecoverTimeoutSeconds int               `yaml:"monitor_recover_timeout_seconds"`
 	MonitorRestartThreshold      int               `yaml:"monitor_restart_threshold"`
 	MonitorProfiles              []MonitorProfile  `yaml:"monitor_profiles"`
+	Defaults                     ServerDefaults    `yaml:"defaults"`
+	Modes                        map[string]Mode   `yaml:"modes"`
 	Servers                      []Server          `yaml:"servers"`
 }
 
@@ -47,14 +51,20 @@ type MonitorProfile struct {
 
 type Server struct {
 	Key               string            `yaml:"key"`
+	Mode              string            `yaml:"mode"`
 	CatalogServerID   string            `yaml:"catalog_server_id"`
 	ContainerName     string            `yaml:"container_name"`
 	Slot              int               `yaml:"slot"`
+	Port              int               `yaml:"port"`
+	ExecConfig        string            `yaml:"exec_cfg"`
+	CollectionID      string            `yaml:"collection_id"`
+	MaxPlayers        int               `yaml:"maxplayers"`
 	Image             string            `yaml:"image"`
 	Groups            []string          `yaml:"groups"`
 	StartAfterMonitor bool              `yaml:"start_after_monitor"`
 	Entrypoint        []string          `yaml:"entrypoint"`
 	Command           []string          `yaml:"command"`
+	CommandTemplate   []string          `yaml:"command_template"`
 	Env               map[string]string `yaml:"env"`
 	Ports             []PortBinding     `yaml:"ports"`
 	Volumes           []VolumeBinding   `yaml:"volumes"`
@@ -64,6 +74,67 @@ type Server struct {
 	StdinOpen         bool              `yaml:"stdin_open"`
 	TTY               bool              `yaml:"tty"`
 	RestartPolicy     string            `yaml:"restart_policy"`
+
+	startAfterMonitorSet bool
+	stdinOpenSet         bool
+	ttySet               bool
+}
+
+type ServerDefaults struct {
+	Image             string            `yaml:"image"`
+	Entrypoint        []string          `yaml:"entrypoint"`
+	Command           []string          `yaml:"command"`
+	CommandTemplate   []string          `yaml:"command_template"`
+	Env               map[string]string `yaml:"env"`
+	Ports             []PortBinding     `yaml:"ports"`
+	Volumes           []VolumeBinding   `yaml:"volumes"`
+	Labels            map[string]string `yaml:"labels"`
+	WorkingDir        string            `yaml:"working_dir"`
+	NetworkMode       string            `yaml:"network_mode"`
+	StdinOpen         bool              `yaml:"stdin_open"`
+	TTY               bool              `yaml:"tty"`
+	RestartPolicy     string            `yaml:"restart_policy"`
+	StartAfterMonitor *bool             `yaml:"start_after_monitor"`
+	MaxPlayers        int               `yaml:"maxplayers"`
+	CollectionID      string            `yaml:"collection_id"`
+	ReplaceEnv        bool              `yaml:"replace_env"`
+	ReplaceLabels     bool              `yaml:"replace_labels"`
+	ReplacePorts      bool              `yaml:"replace_ports"`
+	ReplaceVolumes    bool              `yaml:"replace_volumes"`
+}
+
+func (d *ServerDefaults) UnmarshalYAML(value *yaml.Node) error {
+	type rawDefaults ServerDefaults
+	raw := rawDefaults{
+		RestartPolicy: "unless-stopped",
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*d = ServerDefaults(raw)
+	return nil
+}
+
+type Mode struct {
+	Label             string            `yaml:"label"`
+	Groups            []string          `yaml:"groups"`
+	CollectionID      string            `yaml:"collection_id"`
+	MaxPlayers        int               `yaml:"maxplayers"`
+	CommandTemplate   []string          `yaml:"command_template"`
+	Command           []string          `yaml:"command"`
+	Env               map[string]string `yaml:"env"`
+	Ports             []PortBinding     `yaml:"ports"`
+	Volumes           []VolumeBinding   `yaml:"volumes"`
+	Labels            map[string]string `yaml:"labels"`
+	WorkingDir        string            `yaml:"working_dir"`
+	NetworkMode       string            `yaml:"network_mode"`
+	StdinOpen         *bool             `yaml:"stdin_open"`
+	TTY               *bool             `yaml:"tty"`
+	StartAfterMonitor *bool             `yaml:"start_after_monitor"`
+	ReplaceEnv        bool              `yaml:"replace_env"`
+	ReplaceLabels     bool              `yaml:"replace_labels"`
+	ReplacePorts      bool              `yaml:"replace_ports"`
+	ReplaceVolumes    bool              `yaml:"replace_volumes"`
 }
 
 func (s *Server) UnmarshalYAML(value *yaml.Node) error {
@@ -76,6 +147,9 @@ func (s *Server) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*s = Server(raw)
+	s.startAfterMonitorSet = mappingHasKey(value, "start_after_monitor")
+	s.stdinOpenSet = mappingHasKey(value, "stdin_open")
+	s.ttySet = mappingHasKey(value, "tty")
 	return nil
 }
 
@@ -141,6 +215,7 @@ func defaultConfig() *Config {
 		MonitorStableSeconds:         120,
 		MonitorRecoverTimeoutSeconds: 120,
 		MonitorRestartThreshold:      2,
+		Modes:                        map[string]Mode{},
 	}
 }
 
@@ -175,6 +250,7 @@ func (c *Config) normalize() {
 	if c.AppID <= 0 {
 		c.AppID = 730
 	}
+	c.applyServerDefaults()
 	for i := range c.Servers {
 		server := &c.Servers[i]
 		if server.Groups == nil {
@@ -209,6 +285,180 @@ func (c *Config) normalize() {
 				server.ContainerName = fmt.Sprintf("kepcs-%s-%d", mod, server.Slot)
 			}
 		}
+	}
+}
+
+func (c *Config) applyServerDefaults() {
+	for i := range c.Servers {
+		server := &c.Servers[i]
+		original := *server
+		if strings.TrimSpace(server.Mode) == "" && len(server.Groups) > 0 {
+			server.Mode = strings.TrimSpace(server.Groups[0])
+			original.Mode = server.Mode
+		}
+		mode := c.Modes[strings.TrimSpace(server.Mode)]
+		applyDefaults(server, c.Defaults)
+		applyMode(server, mode, original)
+		finalizeServer(server)
+	}
+}
+
+func applyDefaults(server *Server, defaults ServerDefaults) {
+	if server.Image == "" {
+		server.Image = defaults.Image
+	}
+	if len(server.Entrypoint) == 0 {
+		server.Entrypoint = cloneStrings(defaults.Entrypoint)
+	}
+	if len(server.Command) == 0 && len(defaults.Command) > 0 {
+		server.Command = cloneStrings(defaults.Command)
+	}
+	if len(server.CommandTemplate) == 0 {
+		server.CommandTemplate = cloneStrings(defaults.CommandTemplate)
+	}
+	if len(server.Env) == 0 {
+		server.Env = cloneMap(defaults.Env)
+	} else if !defaults.ReplaceEnv {
+		server.Env = mergeMap(defaults.Env, server.Env)
+	}
+	if len(server.Ports) == 0 {
+		server.Ports = clonePorts(defaults.Ports)
+	} else if !defaults.ReplacePorts {
+		server.Ports = append(clonePorts(defaults.Ports), server.Ports...)
+	}
+	if len(server.Volumes) == 0 {
+		server.Volumes = cloneVolumes(defaults.Volumes)
+	} else if !defaults.ReplaceVolumes {
+		server.Volumes = append(cloneVolumes(defaults.Volumes), server.Volumes...)
+	}
+	if len(server.Labels) == 0 {
+		server.Labels = cloneMap(defaults.Labels)
+	} else if !defaults.ReplaceLabels {
+		server.Labels = mergeMap(defaults.Labels, server.Labels)
+	}
+	if server.WorkingDir == "" {
+		server.WorkingDir = defaults.WorkingDir
+	}
+	if server.NetworkMode == "" {
+		server.NetworkMode = defaults.NetworkMode
+	}
+	if defaults.StdinOpen && !server.stdinOpenSet {
+		server.StdinOpen = defaults.StdinOpen
+	}
+	if defaults.TTY && !server.ttySet {
+		server.TTY = defaults.TTY
+	}
+	if server.RestartPolicy == "" {
+		server.RestartPolicy = defaults.RestartPolicy
+	}
+	if defaults.StartAfterMonitor != nil && !server.startAfterMonitorSet {
+		server.StartAfterMonitor = *defaults.StartAfterMonitor
+	}
+	if server.MaxPlayers <= 0 {
+		server.MaxPlayers = defaults.MaxPlayers
+	}
+	if server.CollectionID == "" {
+		server.CollectionID = defaults.CollectionID
+	}
+}
+
+func applyMode(server *Server, mode Mode, original Server) {
+	if len(mode.Groups) > 0 && len(server.Groups) == 0 {
+		server.Groups = cloneStrings(mode.Groups)
+	}
+	if original.CollectionID == "" && mode.CollectionID != "" {
+		server.CollectionID = mode.CollectionID
+	}
+	if original.MaxPlayers <= 0 && mode.MaxPlayers > 0 {
+		server.MaxPlayers = mode.MaxPlayers
+	}
+	if len(mode.Env) > 0 {
+		base := server.Env
+		if mode.ReplaceEnv {
+			base = nil
+		}
+		server.Env = mergeMap(mergeMap(base, mode.Env), original.Env)
+	}
+	if len(mode.Ports) > 0 {
+		base := withoutTrailingPorts(server.Ports, original.Ports)
+		if mode.ReplacePorts {
+			base = nil
+		}
+		server.Ports = append(base, clonePorts(mode.Ports)...)
+		server.Ports = append(server.Ports, clonePorts(original.Ports)...)
+	}
+	if len(mode.Volumes) > 0 {
+		base := withoutTrailingVolumes(server.Volumes, original.Volumes)
+		if mode.ReplaceVolumes {
+			base = nil
+		}
+		server.Volumes = append(base, cloneVolumes(mode.Volumes)...)
+		server.Volumes = append(server.Volumes, cloneVolumes(original.Volumes)...)
+	}
+	if len(mode.Labels) > 0 {
+		base := server.Labels
+		if mode.ReplaceLabels {
+			base = nil
+		}
+		server.Labels = mergeMap(mergeMap(base, mode.Labels), original.Labels)
+	}
+	if original.WorkingDir == "" && mode.WorkingDir != "" {
+		server.WorkingDir = mode.WorkingDir
+	}
+	if original.NetworkMode == "" && mode.NetworkMode != "" {
+		server.NetworkMode = mode.NetworkMode
+	}
+	if mode.StdinOpen != nil && !original.stdinOpenSet {
+		server.StdinOpen = *mode.StdinOpen
+	}
+	if mode.TTY != nil && !original.ttySet {
+		server.TTY = *mode.TTY
+	}
+	if len(original.Command) == 0 && len(mode.Command) > 0 {
+		server.Command = cloneStrings(mode.Command)
+	}
+	if len(original.CommandTemplate) == 0 && len(mode.CommandTemplate) > 0 {
+		server.CommandTemplate = cloneStrings(mode.CommandTemplate)
+	}
+	if mode.StartAfterMonitor != nil && !original.startAfterMonitorSet {
+		server.StartAfterMonitor = *mode.StartAfterMonitor
+	}
+}
+
+func finalizeServer(server *Server) {
+	if len(server.Groups) == 0 && strings.TrimSpace(server.Mode) != "" {
+		server.Groups = []string{strings.TrimSpace(server.Mode)}
+	}
+	if server.Labels == nil {
+		server.Labels = map[string]string{}
+	}
+	if server.Mode != "" && server.Labels["kepcs.mod"] == "" {
+		server.Labels["kepcs.mod"] = server.Mode
+	}
+	if server.Key != "" && server.Labels["kepcs.server_key"] == "" {
+		server.Labels["kepcs.server_key"] = server.Key
+	}
+	if server.ExecConfig == "" && server.Slot > 0 {
+		mode := firstNonEmpty(server.Mode, firstString(server.Groups))
+		if mode != "" {
+			server.ExecConfig = fmt.Sprintf("kepcs_%s_%d.cfg", mode, server.Slot)
+		}
+	}
+	if server.ExecConfig != "" && server.Labels["kepcs.exec_cfg"] == "" {
+		server.Labels["kepcs.exec_cfg"] = server.ExecConfig
+	}
+	if server.Port > 0 && len(server.Ports) == 0 {
+		server.Ports = []PortBinding{
+			{HostPort: server.Port, ContainerPort: server.Port, Protocol: "tcp"},
+			{HostPort: server.Port, ContainerPort: server.Port, Protocol: "udp"},
+		}
+	}
+	if len(server.Command) == 0 {
+		template := server.CommandTemplate
+		if len(template) == 0 {
+			template = defaultCommandTemplate()
+		}
+		server.Command = renderCommand(template, *server)
 	}
 }
 
@@ -353,4 +603,126 @@ func normalizeQuotedNumbers(input string) string {
 		}
 		return match[1] + match[2]
 	})
+}
+
+func mappingHasKey(value *yaml.Node, key string) bool {
+	if value == nil || value.Kind != yaml.MappingNode {
+		return false
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		if value.Content[index].Value == key {
+			return true
+		}
+	}
+	return false
+}
+
+func renderCommand(command []string, server Server) []string {
+	data := map[string]any{
+		"key":           server.Key,
+		"mode":          firstNonEmpty(server.Mode, firstString(server.Groups)),
+		"group":         firstNonEmpty(server.Mode, firstString(server.Groups)),
+		"slot":          server.Slot,
+		"port":          server.Port,
+		"exec_cfg":      server.ExecConfig,
+		"collection_id": server.CollectionID,
+		"maxplayers":    server.MaxPlayers,
+	}
+	rendered := make([]string, 0, len(command))
+	for _, item := range command {
+		tpl, err := template.New("command").Option("missingkey=zero").Parse(item)
+		if err != nil {
+			rendered = append(rendered, item)
+			continue
+		}
+		var buffer bytes.Buffer
+		if err := tpl.Execute(&buffer, data); err != nil {
+			rendered = append(rendered, item)
+			continue
+		}
+		rendered = append(rendered, buffer.String())
+	}
+	return rendered
+}
+
+func defaultCommandTemplate() []string {
+	return []string{
+		"bash",
+		"-lc",
+		"cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers {{.maxplayers}} +game_type 0 +game_mode 0 +map de_dust2 -port {{.port}} -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection {{.collection_id}} +exec {{.exec_cfg}}",
+	}
+}
+
+func mergeMap(base map[string]string, override map[string]string) map[string]string {
+	result := cloneMap(base)
+	if result == nil {
+		result = map[string]string{}
+	}
+	for key, value := range override {
+		result[key] = value
+	}
+	return result
+}
+
+func cloneMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+func cloneStrings(input []string) []string {
+	if input == nil {
+		return nil
+	}
+	return append([]string(nil), input...)
+}
+
+func clonePorts(input []PortBinding) []PortBinding {
+	if input == nil {
+		return nil
+	}
+	return append([]PortBinding(nil), input...)
+}
+
+func withoutTrailingPorts(values []PortBinding, trailing []PortBinding) []PortBinding {
+	if len(trailing) == 0 || len(values) < len(trailing) {
+		return clonePorts(values)
+	}
+	return clonePorts(values[:len(values)-len(trailing)])
+}
+
+func cloneVolumes(input []VolumeBinding) []VolumeBinding {
+	if input == nil {
+		return nil
+	}
+	return append([]VolumeBinding(nil), input...)
+}
+
+func withoutTrailingVolumes(values []VolumeBinding, trailing []VolumeBinding) []VolumeBinding {
+	if len(trailing) == 0 || len(values) < len(trailing) {
+		return cloneVolumes(values)
+	}
+	return cloneVolumes(values[:len(values)-len(trailing)])
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[0])
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
