@@ -14,8 +14,8 @@ var SupportedCommands = []string{
 	"node.rcon_command",
 	"node.check_update",
 	"node.check_validate",
-	"node.get_oldver",
-	"node.get_nowver",
+	"node.get_local_build",
+	"node.get_remote_build",
 	"node.monitor_check",
 	"node.monitor_start",
 }

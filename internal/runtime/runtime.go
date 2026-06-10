@@ -574,7 +574,7 @@ func (r *Runtime) SendRCONCommand(ctx context.Context, group string, command str
 	}, nil
 }
 
-func (r *Runtime) GetOldVersion(ctx context.Context) (map[string]any, error) {
+func (r *Runtime) GetLocalBuild(ctx context.Context) (map[string]any, error) {
 	if err := r.checkCancelled(ctx); err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func (r *Runtime) GetOldVersion(ctx context.Context) (map[string]any, error) {
 	return map[string]any{"buildId": buildID, "message": "Current buildid: " + buildID}, nil
 }
 
-func (r *Runtime) GetNowVersion(ctx context.Context) (map[string]any, error) {
+func (r *Runtime) GetRemoteBuild(ctx context.Context) (map[string]any, error) {
 	if err := r.checkCancelled(ctx); err != nil {
 		return nil, err
 	}
@@ -627,7 +627,7 @@ func (r *Runtime) CheckUpdate(ctx context.Context) (map[string]any, error) {
 		validated["message"] = monitor["message"]
 		return validated, nil
 	}
-	remote, err := r.GetNowVersion(ctx)
+	remote, err := r.GetRemoteBuild(ctx)
 	if err != nil {
 		return nil, err
 	}

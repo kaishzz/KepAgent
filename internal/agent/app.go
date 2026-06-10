@@ -41,8 +41,8 @@ func New(cfg *config.Config, client *api.Client, rt *runtime.Runtime, logger *sl
 		"node.rcon_command":     app.handleRCONCommand,
 		"node.check_update":     app.handleCheckUpdate,
 		"node.check_validate":   app.handleCheckValidate,
-		"node.get_oldver":       app.handleGetOldVersion,
-		"node.get_nowver":       app.handleGetNowVersion,
+		"node.get_local_build":  app.handleGetLocalBuild,
+		"node.get_remote_build": app.handleGetRemoteBuild,
 		"node.monitor_check":    app.handleMonitorCheck,
 		"node.monitor_start":    app.handleMonitorStart,
 	}
@@ -298,13 +298,13 @@ func (a *App) handleCheckValidate(ctx context.Context, _ map[string]any, logs *L
 	return finishLogged(ctx, result, true, err, logs)
 }
 
-func (a *App) handleGetOldVersion(ctx context.Context, _ map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
-	result, err := a.runtime.GetOldVersion(ctx)
+func (a *App) handleGetLocalBuild(ctx context.Context, _ map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
+	result, err := a.runtime.GetLocalBuild(ctx)
 	return finishLogged(ctx, result, true, err, logs)
 }
 
-func (a *App) handleGetNowVersion(ctx context.Context, _ map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
-	result, err := a.runtime.GetNowVersion(ctx)
+func (a *App) handleGetRemoteBuild(ctx context.Context, _ map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
+	result, err := a.runtime.GetRemoteBuild(ctx)
 	return finishLogged(ctx, result, true, err, logs)
 }
 
