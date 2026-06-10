@@ -10,7 +10,7 @@ on:
       version:
         description: "Version string embedded into the binary"
         required: false
-        default: "dev"
+        default: "1.0"
 
 permissions:
   contents: write
@@ -38,7 +38,7 @@ jobs:
           elif [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION="${GITHUB_SHA::12}"
+            VERSION="1.0"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
