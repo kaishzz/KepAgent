@@ -1,50 +1,71 @@
-name: Build Linux (Debian 11 compatible)
+name: Build Linux amd64
 
 on:
   push:
     branches: ["main"]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string embedded into the binary"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
 
 jobs:
-  build-debian11:
+  build-linux-amd64:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Build inside Debian 11 (bullseye) container with Python 3.12
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+          cache: true
+
+      - name: Resolve version
+        id: version
+        shell: bash
         run: |
-          docker run --rm -v "${{ github.workspace }}:/app" -w /app python:3.12-bullseye bash -lc '
-            set -e
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_SHA::12}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-            echo "== System info =="
-            cat /etc/os-release || true
-            python -V
-            pip -V
+      - name: Test
+        run: go test ./...
 
-            apt-get update &&
-            apt-get install -y --no-install-recommends \
-              build-essential \
-              libssl-dev \
-              libffi-dev \
-              patchelf \
-            && rm -rf /var/lib/apt/lists/*
-
-            python -m venv .venv
-            . .venv/bin/activate
-
-            pip install -U pip
-            pip install -r requirements.txt
-            pip install pyinstaller
-
-            pyinstaller --noconfirm --clean --name kepagent --onefile main.py
-          '
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/kaishzz/kepagent/internal/version.Version=${VERSION}" \
+            -o kepagent-linux-amd64 \
+            ./cmd/kepagent
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: kepagent-debian11
-          path: dist/kepagent
+          name: kepagent-linux-amd64
+          path: kepagent-linux-amd64
+
+      - name: Upload binary to release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" kepagent-linux-amd64 --repo "${{ github.repository }}" --clobber
