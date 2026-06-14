@@ -493,16 +493,21 @@ func (r *Runtime) reportState(ctx context.Context, keys []string) {
 
 func (r *Runtime) SendRCONCommand(ctx context.Context, group string, command string, serverKeys []string, targets []map[string]any) (map[string]any, error) {
 	passwordByKey := map[string]string{}
+	hostByKey := map[string]string{}
 	targetKeys := append([]string{}, serverKeys...)
 	for _, target := range targets {
-		key := strings.TrimSpace(fmt.Sprint(target["key"]))
+		key := mapStringValue(target, "key")
 		if key == "" {
 			continue
 		}
 		if !slices.Contains(targetKeys, key) {
 			targetKeys = append(targetKeys, key)
 		}
-		password := strings.TrimSpace(fmt.Sprint(target["password"]))
+		host := firstNonEmpty(mapStringValue(target, "host"), mapStringValue(target, "ip"))
+		if host != "" {
+			hostByKey[key] = host
+		}
+		password := mapStringValue(target, "password")
 		if password != "" {
 			passwordByKey[key] = password
 		}
@@ -529,15 +534,18 @@ func (r *Runtime) SendRCONCommand(ctx context.Context, group string, command str
 			return nil, err
 		}
 		port := r.serverPrimaryPort(server)
+		host := hostByKey[server.Key]
 		password := passwordByKey[server.Key]
 		response := ""
 		ok := false
 		errorMessage := ""
-		r.emit("info", "RCON %s:%d sending command", server.Key, port)
-		if strings.TrimSpace(password) == "" {
+		r.emit("info", "RCON %s %s:%d sending command", server.Key, host, port)
+		if strings.TrimSpace(host) == "" {
+			errorMessage = "RCON host is empty"
+		} else if strings.TrimSpace(password) == "" {
 			errorMessage = "RCON password is empty"
 		} else {
-			response, err = rcon.Run(r.cfg.RCONHost, port, password, command, r.cfg.RCONTimeout())
+			response, err = rcon.Run(host, port, password, command, r.cfg.RCONTimeout())
 			if err != nil {
 				errorMessage = err.Error()
 			} else {
@@ -546,9 +554,9 @@ func (r *Runtime) SendRCONCommand(ctx context.Context, group string, command str
 			}
 		}
 		if ok {
-			r.emit("info", "RCON %s:%d succeeded", server.Key, port)
+			r.emit("info", "RCON %s %s:%d succeeded", server.Key, host, port)
 		} else {
-			r.emit("error", "RCON %s:%d failed: %s", server.Key, port, errorMessage)
+			r.emit("error", "RCON %s %s:%d failed: %s", server.Key, host, port, errorMessage)
 		}
 		var errorValue any
 		if errorMessage != "" {
@@ -556,6 +564,7 @@ func (r *Runtime) SendRCONCommand(ctx context.Context, group string, command str
 		}
 		results = append(results, map[string]any{
 			"key":      server.Key,
+			"host":     host,
 			"port":     port,
 			"ok":       ok,
 			"response": response,
@@ -1153,9 +1162,22 @@ func nilIfEmpty(value string) any {
 	return value
 }
 
+func mapStringValue(values map[string]any, key string) string {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
+		value = strings.TrimSpace(value)
+		if value != "" && value != "<nil>" {
 			return value
 		}
 	}

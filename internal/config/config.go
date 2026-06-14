@@ -26,7 +26,6 @@ type Config struct {
 	ServerQueryHost              string            `yaml:"server_query_host"`
 	ServerQueryTimeoutSeconds    int               `yaml:"server_query_timeout_seconds"`
 	ServerQueryCacheTTLSeconds   int               `yaml:"server_query_cache_ttl_seconds"`
-	RCONHost                     string            `yaml:"rcon_host"`
 	RCONTimeoutSeconds           int               `yaml:"rcon_timeout_seconds"`
 	SteamCMDPath                 string            `yaml:"steamcmd_sh"`
 	CS2Root                      string            `yaml:"cs2_root"`
@@ -197,7 +196,6 @@ func defaultConfig() *Config {
 		ServerQueryHost:              "127.0.0.1",
 		ServerQueryTimeoutSeconds:    2,
 		ServerQueryCacheTTLSeconds:   1,
-		RCONHost:                     "127.0.0.1",
 		RCONTimeoutSeconds:           5,
 		SteamCMDPath:                 "/data/steamcmd/steamcmd.sh",
 		CS2Root:                      "/data/cs2",
@@ -231,9 +229,6 @@ func (c *Config) normalize() {
 	}
 	if c.ServerQueryCacheTTLSeconds <= 0 {
 		c.ServerQueryCacheTTLSeconds = 1
-	}
-	if c.RCONHost == "" {
-		c.RCONHost = "127.0.0.1"
 	}
 	if c.RCONTimeoutSeconds <= 0 {
 		c.RCONTimeoutSeconds = 5

@@ -154,6 +154,9 @@ func (a *App) processOneCommand(ctx context.Context) error {
 	}()
 
 	live.Append(ctx, "Executing command: "+command.CommandType)
+	if err := live.Flush(ctx); err != nil {
+		a.logger.Warn("initial command log flush failed", "error", err)
+	}
 	result, ok, execErr := a.executeCommand(ctx, command, live)
 	_ = live.Flush(ctx)
 	_ = a.reportRuntimeState(ctx, nil)
