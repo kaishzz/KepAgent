@@ -1067,9 +1067,9 @@ func (r *Runtime) runProcess(ctx context.Context, timeout time.Duration, name st
 }
 
 type processOutputEvent struct {
-	level string
-	text  string
-	err   error
+	stream string
+	text   string
+	err    error
 }
 
 func (r *Runtime) runProcessWithLiveOutput(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
@@ -1095,22 +1095,22 @@ func (r *Runtime) runProcessWithLiveOutputUntil(ctx context.Context, timeout tim
 
 	events := make(chan processOutputEvent, 100)
 	var readers sync.WaitGroup
-	readStream := func(level string, reader io.Reader) {
+	readStream := func(stream string, reader io.Reader) {
 		defer readers.Done()
 		scanner := bufio.NewScanner(reader)
 		scanner.Split(scanLinesOrCarriageReturns)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
-			events <- processOutputEvent{level: level, text: scanner.Text()}
+			events <- processOutputEvent{stream: stream, text: scanner.Text()}
 		}
 		if err := scanner.Err(); err != nil {
-			events <- processOutputEvent{level: "error", err: err}
+			events <- processOutputEvent{stream: stream, err: err}
 		}
 	}
 
 	readers.Add(2)
-	go readStream("info", stdout)
-	go readStream("error", stderr)
+	go readStream("stdout", stdout)
+	go readStream("stderr", stderr)
 
 	waitCh := make(chan error, 1)
 	go func() {
@@ -1136,14 +1136,15 @@ func (r *Runtime) runProcessWithLiveOutputUntil(ctx context.Context, timeout tim
 			continue
 		}
 		outputParts = append(outputParts, text)
-		if stopCondition != nil && stopCondition(event.level, text) {
+		level := liveOutputLevel(event.stream, text)
+		if stopCondition != nil && stopCondition(event.stream, text) {
 			stoppedEarly = true
 			if cmd.Process != nil {
 				_ = cmd.Process.Kill()
 			}
 			continue
 		}
-		r.emit(event.level, "%s", text)
+		r.emit(level, "%s", text)
 	}
 
 	output := strings.TrimSpace(strings.Join(outputParts, "\n"))
@@ -1158,6 +1159,22 @@ func (r *Runtime) runProcessWithLiveOutputUntil(ctx context.Context, timeout tim
 		return output, fmt.Errorf("%s output read failed: %w", name, readErr)
 	}
 	return output, nil
+}
+
+func liveOutputLevel(stream string, text string) string {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if stream != "stderr" {
+		return "info"
+	}
+	if strings.HasPrefix(normalized, "warning:") || strings.HasPrefix(normalized, "warning ") {
+		return "warning"
+	}
+	for _, marker := range []string{"error", "failed", "fatal", "panic"} {
+		if strings.Contains(normalized, marker) {
+			return "error"
+		}
+	}
+	return "info"
 }
 
 func (r *Runtime) buildSteamcmdValidateStopCondition() func(string, string) bool {

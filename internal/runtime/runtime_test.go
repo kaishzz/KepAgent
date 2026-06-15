@@ -71,13 +71,15 @@ func TestRunProcessWithLiveOutputEmitsLines(t *testing.T) {
 		"info:stdout line",
 		"info:progress 50",
 		"info:progress 100",
-		"error:stderr line",
+		"info:steamcmd.sh[123]: Starting /data/steamcmd/linux32/steamcmd",
+		"warning:WARNING: setlocale failed",
+		"error:Fatal failure",
 	} {
 		if !strings.Contains(strings.Join(logs, "\n"), expected) {
 			t.Fatalf("expected log %q, got %#v", expected, logs)
 		}
 	}
-	if !strings.Contains(output, "stdout line") || !strings.Contains(output, "stderr line") {
+	if !strings.Contains(output, "stdout line") || !strings.Contains(output, "steamcmd.sh[123]") {
 		t.Fatalf("unexpected output: %q", output)
 	}
 }
@@ -176,7 +178,9 @@ func TestHelperProcess(t *testing.T) {
 		if arg == "--" && index+1 < len(os.Args) && os.Args[index+1] == "stream-output" {
 			fmt.Fprintln(os.Stdout, "stdout line")
 			fmt.Fprint(os.Stdout, "progress 50\rprogress 100\n")
-			fmt.Fprintln(os.Stderr, "stderr line")
+			fmt.Fprintln(os.Stderr, "steamcmd.sh[123]: Starting /data/steamcmd/linux32/steamcmd")
+			fmt.Fprintln(os.Stderr, "WARNING: setlocale failed")
+			fmt.Fprintln(os.Stderr, "Fatal failure")
 			os.Exit(0)
 		}
 		if arg == "--" && index+1 < len(os.Args) && os.Args[index+1] == "stop-after-success" {
