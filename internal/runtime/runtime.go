@@ -1,8 +1,11 @@
 package runtime
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -11,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kaishzz/kepagent/internal/config"
@@ -714,10 +718,11 @@ func (r *Runtime) runAppUpdateValidate(ctx context.Context) (map[string]any, err
 		return nil, err
 	}
 	r.emit("info", "Running steamcmd app_update %d validate", r.cfg.AppID)
-	output, err := r.runProcess(ctx, time.Hour, r.cfg.SteamCMDPath, "+force_install_dir", r.cfg.CS2Root, "+login", "anonymous", "+app_update", strconv.Itoa(r.cfg.AppID), "validate", "+quit")
+	output, err := r.runProcessWithLiveOutputUntil(ctx, time.Hour, r.buildSteamcmdValidateStopCondition(), r.cfg.SteamCMDPath, "+force_install_dir", r.cfg.CS2Root, "+login", "anonymous", "+app_update", strconv.Itoa(r.cfg.AppID), "validate", "+quit")
 	if err != nil {
 		return nil, err
 	}
+	r.emit("info", "steamcmd app_update validate completed successfully")
 	metamod, err := r.ensureMetamodPath()
 	if err != nil {
 		return nil, err
@@ -1061,7 +1066,149 @@ func (r *Runtime) runProcess(ctx context.Context, timeout time.Duration, name st
 	return text, nil
 }
 
+type processOutputEvent struct {
+	level string
+	text  string
+	err   error
+}
+
+func (r *Runtime) runProcessWithLiveOutput(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
+	return r.runProcessWithLiveOutputUntil(ctx, timeout, nil, name, args...)
+}
+
+func (r *Runtime) runProcessWithLiveOutputUntil(ctx context.Context, timeout time.Duration, stopCondition func(string, string) bool, name string, args ...string) (string, error) {
+	processCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(processCtx, name, args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	events := make(chan processOutputEvent, 100)
+	var readers sync.WaitGroup
+	readStream := func(level string, reader io.Reader) {
+		defer readers.Done()
+		scanner := bufio.NewScanner(reader)
+		scanner.Split(scanLinesOrCarriageReturns)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			events <- processOutputEvent{level: level, text: scanner.Text()}
+		}
+		if err := scanner.Err(); err != nil {
+			events <- processOutputEvent{level: "error", err: err}
+		}
+	}
+
+	readers.Add(2)
+	go readStream("info", stdout)
+	go readStream("error", stderr)
+
+	waitCh := make(chan error, 1)
+	go func() {
+		readers.Wait()
+		waitErr := cmd.Wait()
+		waitCh <- waitErr
+		close(waitCh)
+		close(events)
+	}()
+
+	outputParts := []string{}
+	var readErr error
+	stoppedEarly := false
+	for event := range events {
+		if event.err != nil {
+			if readErr == nil {
+				readErr = event.err
+			}
+			continue
+		}
+		text := stripANSI(event.text)
+		if text == "" {
+			continue
+		}
+		outputParts = append(outputParts, text)
+		if stopCondition != nil && stopCondition(event.level, text) {
+			stoppedEarly = true
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			continue
+		}
+		r.emit(event.level, "%s", text)
+	}
+
+	output := strings.TrimSpace(strings.Join(outputParts, "\n"))
+	waitErr := <-waitCh
+	if processCtx.Err() == context.DeadlineExceeded {
+		return output, fmt.Errorf("%s timed out after %s", name, timeout)
+	}
+	if waitErr != nil && !stoppedEarly {
+		return output, fmt.Errorf("%s failed: %w: %s", name, waitErr, output)
+	}
+	if readErr != nil {
+		return output, fmt.Errorf("%s output read failed: %w", name, readErr)
+	}
+	return output, nil
+}
+
+func (r *Runtime) buildSteamcmdValidateStopCondition() func(string, string) bool {
+	sawVerifyNearCompletion := false
+	completionReported := false
+	markComplete := func(message string) bool {
+		if !completionReported {
+			r.emit("info", "%s", message)
+			completionReported = true
+		}
+		return true
+	}
+	return func(_ string, message string) bool {
+		normalized := strings.TrimSpace(message)
+		if normalized == "" {
+			return false
+		}
+		if strings.Contains(strings.ToLower(normalized), "success!") && strings.Contains(strings.ToLower(normalized), "fully installed") {
+			return markComplete("Detected steamcmd completion marker, stopping process tail")
+		}
+		matched := steamcmdValidateVerifyProgressRe.FindStringSubmatch(normalized)
+		if len(matched) >= 2 {
+			progress, err := strconv.ParseFloat(matched[1], 64)
+			if err == nil {
+				sawVerifyNearCompletion = progress >= 99
+			}
+			return false
+		}
+		if sawVerifyNearCompletion && steamcmdValidateUnknownStateRe.MatchString(normalized) {
+			return markComplete("Detected steamcmd terminal unknown state after verify, treating validate as complete")
+		}
+		return false
+	}
+}
+
+func scanLinesOrCarriageReturns(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if index := bytes.IndexAny(data, "\r\n"); index >= 0 {
+		return index + 1, bytes.TrimRight(data[:index], "\r\n"), nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
 var ansiEscape = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+var steamcmdValidateVerifyProgressRe = regexp.MustCompile(`Update state \(0x5\) verifying install, progress: ([0-9]+(?:\.[0-9]+)?)`)
+var steamcmdValidateUnknownStateRe = regexp.MustCompile(`Update state \(0x0\) unknown, progress: 0\.00 \(0 / 0\)`)
 
 func stripANSI(input string) string {
 	return strings.TrimSpace(ansiEscape.ReplaceAllString(input, ""))
