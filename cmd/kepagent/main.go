@@ -39,6 +39,7 @@ func main() {
 	apiClient := api.NewClient(cfg.APIBaseURL, cfg.APIKey, cfg.RequestTimeout())
 	dockerClient := dockerapi.NewClient(cfg.DockerBaseURL, cfg.RequestTimeout())
 	rt := runtime.New(cfg, dockerClient, logger)
+	rt.SetControlClient(apiClient)
 	app := agent.New(cfg, apiClient, rt, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log/slog"
@@ -34,10 +35,15 @@ func (e CancelledError) Error() string {
 
 type Runtime struct {
 	cfg           *config.Config
+	client        interface {
+		DownloadReplayAsset(context.Context, string, string, int) error
+		UploadReplayAsset(context.Context, string, string, string, string, string, int64, int) error
+	}
 	docker        *dockerapi.Client
 	logger        *slog.Logger
 	serversByKey  map[string]config.Server
 	groups        map[string][]config.Server
+	replayLocks   sync.Map
 	cancelReader  func(context.Context) (map[string]any, error)
 	logEmitter    func(level string, message string)
 	stateReporter func(context.Context, []string)
@@ -60,6 +66,13 @@ func New(cfg *config.Config, docker *dockerapi.Client, logger *slog.Logger) *Run
 		}
 	}
 	return rt
+}
+
+func (r *Runtime) SetControlClient(client interface {
+	DownloadReplayAsset(context.Context, string, string, int) error
+	UploadReplayAsset(context.Context, string, string, string, string, string, int64, int) error
+}) {
+	r.client = client
 }
 
 func (r *Runtime) SetCancelReader(reader func(context.Context) (map[string]any, error)) {
@@ -1303,6 +1316,203 @@ func truthy(value any) bool {
 	default:
 		return fmt.Sprint(typed) == "true"
 	}
+}
+
+func (r *Runtime) replayTarget(key string) (config.ReplayTarget, error) {
+	for _, target := range r.cfg.ReplayTargets {
+		if strings.EqualFold(strings.TrimSpace(target.Key), strings.TrimSpace(key)) {
+			if !target.Enabled {
+				return config.ReplayTarget{}, fmt.Errorf("replay target %s is disabled", key)
+			}
+			return target, nil
+		}
+	}
+	return config.ReplayTarget{}, fmt.Errorf("unknown replay target: %s", key)
+}
+
+func (r *Runtime) replayTargetLock(target config.ReplayTarget) chan struct{} {
+	limit := target.ConcurrencyLimit
+	if limit <= 0 {
+		limit = 1
+	}
+	lock, _ := r.replayLocks.LoadOrStore(target.Key, make(chan struct{}, limit))
+	return lock.(chan struct{})
+}
+
+func (r *Runtime) withReplayTargetSlot(ctx context.Context, target config.ReplayTarget) error {
+	lock := r.replayTargetLock(target)
+	select {
+	case lock <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Runtime) releaseReplayTargetSlot(target config.ReplayTarget) {
+	lock := r.replayTargetLock(target)
+	select {
+	case <-lock:
+	default:
+	}
+}
+
+func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string) (map[string]any, error) {
+	target, err := r.replayTarget(targetKey)
+	if err != nil {
+		return nil, err
+	}
+	if !target.AllowDownload {
+		return nil, fmt.Errorf("replay target %s does not allow download", targetKey)
+	}
+	entries, err := os.ReadDir(target.Path)
+	if err != nil {
+		return nil, err
+	}
+	files := []map[string]any{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.ToLower(filepath.Ext(name)) != ".dem" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, map[string]any{
+			"name":         name,
+			"relativePath": name,
+			"sizeBytes":    info.Size(),
+			"updatedAt":    info.ModTime().UTC().Format(time.RFC3339),
+		})
+	}
+	return map[string]any{
+		"ok":        true,
+		"targetKey": target.Key,
+		"modeKey":   target.ModeKey,
+		"label":     target.Label,
+		"files":     files,
+		"message":   fmt.Sprintf("Listed %d replay files", len(files)),
+	}, nil
+}
+
+func (r *Runtime) ImportReplay(ctx context.Context, assetID, targetKey, finalFileName string) (map[string]any, error) {
+	target, err := r.replayTarget(targetKey)
+	if err != nil {
+		return nil, err
+	}
+	if !target.AllowUpload {
+		return nil, fmt.Errorf("replay target %s does not allow upload", targetKey)
+	}
+	if r.client == nil {
+		return nil, fmt.Errorf("control client is not configured")
+	}
+	if err := r.withReplayTargetSlot(ctx, target); err != nil {
+		return nil, err
+	}
+	defer r.releaseReplayTargetSlot(target)
+	if err := os.MkdirAll(r.cfg.ReplayTempDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(target.Path, 0o755); err != nil {
+		return nil, err
+	}
+	safeName := strings.TrimSpace(filepath.Base(finalFileName))
+	if safeName == "" || strings.Contains(safeName, "..") || strings.ToLower(filepath.Ext(safeName)) != ".dem" {
+		return nil, fmt.Errorf("invalid replay file name")
+	}
+	tempPath := filepath.Join(r.cfg.ReplayTempDir, fmt.Sprintf("%d-%s.part", time.Now().UnixNano(), safeName))
+	if err := r.client.DownloadReplayAsset(ctx, assetID, tempPath, target.TransferLimitMbps); err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(tempPath)
+	if err != nil {
+		return nil, err
+	}
+	maxUploadBytes := int64(target.MaxUploadSizeMB) * 1024 * 1024
+	if maxUploadBytes > 0 && info.Size() > maxUploadBytes {
+		_ = os.Remove(tempPath)
+		return nil, fmt.Errorf("replay file exceeds target upload limit")
+	}
+	targetPath := filepath.Join(target.Path, safeName)
+	if _, err := os.Stat(targetPath); err == nil {
+		_ = os.Remove(tempPath)
+		return nil, fmt.Errorf("target replay already exists")
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		return nil, err
+	}
+	info, err = os.Stat(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"ok":        true,
+		"targetKey": target.Key,
+		"modeKey":   target.ModeKey,
+		"path":      targetPath,
+		"fileName":  safeName,
+		"sizeBytes": info.Size(),
+		"message":   fmt.Sprintf("Imported replay to %s", target.Label),
+	}, nil
+}
+
+func (r *Runtime) ExportReplay(ctx context.Context, assetID, targetKey, relativePath, finalFileName string) (map[string]any, error) {
+	target, err := r.replayTarget(targetKey)
+	if err != nil {
+		return nil, err
+	}
+	if !target.AllowDownload {
+		return nil, fmt.Errorf("replay target %s does not allow download", targetKey)
+	}
+	if r.client == nil {
+		return nil, fmt.Errorf("control client is not configured")
+	}
+	if err := r.withReplayTargetSlot(ctx, target); err != nil {
+		return nil, err
+	}
+	defer r.releaseReplayTargetSlot(target)
+	cleanRelativePath := filepath.Clean(strings.TrimSpace(relativePath))
+	if cleanRelativePath == "." || strings.HasPrefix(cleanRelativePath, "..") || filepath.IsAbs(cleanRelativePath) {
+		return nil, fmt.Errorf("invalid replay relative path")
+	}
+	sourcePath := filepath.Join(target.Path, cleanRelativePath)
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	exportName := strings.TrimSpace(filepath.Base(finalFileName))
+	if exportName == "" {
+		exportName = filepath.Base(sourcePath)
+	}
+	if err := r.client.UploadReplayAsset(ctx, assetID, sourcePath, exportName, "application/octet-stream", fmt.Sprintf("%x", hash.Sum(nil)), info.Size(), target.TransferLimitMbps); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"ok":              true,
+		"targetKey":       target.Key,
+		"modeKey":         target.ModeKey,
+		"relativePath":    cleanRelativePath,
+		"fileName":        exportName,
+		"sizeBytes":       info.Size(),
+		"exportedStorageKey": assetID,
+		"message":         fmt.Sprintf("Exported replay from %s", target.Label),
+	}, nil
 }
 
 func asInt(value any) int {

@@ -35,10 +35,25 @@ type Config struct {
 	MonitorStableSeconds         int               `yaml:"monitor_stable_seconds"`
 	MonitorRecoverTimeoutSeconds int               `yaml:"monitor_recover_timeout_seconds"`
 	MonitorRestartThreshold      int               `yaml:"monitor_restart_threshold"`
+	ReplayTempDir                string            `yaml:"replay_temp_dir"`
+	ReplayTargets                []ReplayTarget    `yaml:"replay_targets"`
 	MonitorProfiles              []MonitorProfile  `yaml:"monitor_profiles"`
 	Defaults                     ServerDefaults    `yaml:"defaults"`
 	Modes                        map[string]Mode   `yaml:"modes"`
 	Servers                      []Server          `yaml:"servers"`
+}
+
+type ReplayTarget struct {
+	Key                 string `yaml:"key"`
+	ModeKey             string `yaml:"mode_key"`
+	Label               string `yaml:"label"`
+	Path                string `yaml:"path"`
+	Enabled             bool   `yaml:"enabled"`
+	AllowUpload         bool   `yaml:"allow_upload"`
+	AllowDownload       bool   `yaml:"allow_download"`
+	MaxUploadSizeMB     int    `yaml:"max_upload_size_mb"`
+	TransferLimitMbps   int    `yaml:"transfer_limit_mbps"`
+	ConcurrencyLimit    int    `yaml:"concurrency_limit"`
 }
 
 type MonitorProfile struct {
@@ -204,6 +219,7 @@ func defaultConfig() *Config {
 		MonitorStableSeconds:         120,
 		MonitorRecoverTimeoutSeconds: 120,
 		MonitorRestartThreshold:      2,
+		ReplayTempDir:                filepath.Join(os.TempDir(), "kepagent-replay"),
 		Modes:                        map[string]Mode{},
 	}
 }
@@ -235,6 +251,25 @@ func (c *Config) normalize() {
 	}
 	if c.AppID <= 0 {
 		c.AppID = 730
+	}
+	if strings.TrimSpace(c.ReplayTempDir) == "" {
+		c.ReplayTempDir = filepath.Join(os.TempDir(), "kepagent-replay")
+	}
+	for i := range c.ReplayTargets {
+		target := &c.ReplayTargets[i]
+		target.Key = strings.TrimSpace(target.Key)
+		target.ModeKey = strings.TrimSpace(target.ModeKey)
+		target.Label = strings.TrimSpace(target.Label)
+		target.Path = filepath.Clean(strings.TrimSpace(target.Path))
+		if !target.Enabled {
+			target.Enabled = target.Path != "."
+		}
+		if target.MaxUploadSizeMB <= 0 {
+			target.MaxUploadSizeMB = 256
+		}
+		if target.ConcurrencyLimit <= 0 {
+			target.ConcurrencyLimit = 1
+		}
 	}
 	c.applyServerDefaults()
 	for i := range c.Servers {
@@ -440,6 +475,19 @@ func (c *Config) validate() error {
 		return fmt.Errorf("api_key is required")
 	}
 	seen := map[string]bool{}
+	replaySeen := map[string]bool{}
+	for _, target := range c.ReplayTargets {
+		if target.Key == "" {
+			return fmt.Errorf("replay_targets[].key is required")
+		}
+		if replaySeen[target.Key] {
+			return fmt.Errorf("duplicate replay target key %q", target.Key)
+		}
+		replaySeen[target.Key] = true
+		if target.Path == "" || target.Path == "." {
+			return fmt.Errorf("replay target %s path is required", target.Key)
+		}
+	}
 	for _, server := range c.Servers {
 		if strings.TrimSpace(server.Key) == "" {
 			return fmt.Errorf("servers[].key is required")

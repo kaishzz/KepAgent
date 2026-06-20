@@ -18,4 +18,7 @@ var SupportedCommands = []string{
 	"node.get_remote_build",
 	"node.monitor_check",
 	"node.monitor_start",
+	"node.replay_list",
+	"node.replay_import",
+	"node.replay_export",
 }

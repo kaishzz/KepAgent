@@ -45,6 +45,9 @@ func New(cfg *config.Config, client *api.Client, rt *runtime.Runtime, logger *sl
 		"node.get_remote_build": app.handleGetRemoteBuild,
 		"node.monitor_check":    app.handleMonitorCheck,
 		"node.monitor_start":    app.handleMonitorStart,
+		"node.replay_list":      app.handleReplayList,
+		"node.replay_import":    app.handleReplayImport,
+		"node.replay_export":    app.handleReplayExport,
 	}
 	return app
 }
@@ -318,6 +321,32 @@ func (a *App) handleMonitorCheck(ctx context.Context, _ map[string]any, logs *Li
 
 func (a *App) handleMonitorStart(ctx context.Context, _ map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
 	result, err := a.runtime.MonitorCheck(ctx, true)
+	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
+}
+
+func (a *App) handleReplayList(ctx context.Context, payload map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
+	result, err := a.runtime.ListReplayFiles(ctx, requiredString(payload, "targetKey"))
+	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
+}
+
+func (a *App) handleReplayImport(ctx context.Context, payload map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
+	result, err := a.runtime.ImportReplay(
+		ctx,
+		requiredString(payload, "assetId"),
+		requiredString(payload, "targetKey"),
+		requiredString(payload, "finalFileName"),
+	)
+	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
+}
+
+func (a *App) handleReplayExport(ctx context.Context, payload map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
+	result, err := a.runtime.ExportReplay(
+		ctx,
+		requiredString(payload, "assetId"),
+		requiredString(payload, "targetKey"),
+		requiredString(payload, "relativePath"),
+		requiredString(payload, "finalFileName"),
+	)
 	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
 }
 

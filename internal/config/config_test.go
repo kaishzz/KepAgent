@@ -242,3 +242,43 @@ func TestPrivateConfigsLoadIfPresent(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReplayTargets(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+api_base_url: "https://example.test"
+api_key: "secret"
+replay_targets:
+  - key: "surf-main"
+    mode_key: "surf"
+    label: "Surf 主服 Replay"
+    path: "/data/replays/surf"
+    enabled: true
+    allow_upload: true
+    allow_download: true
+    max_upload_size_mb: 128
+    transfer_limit_mbps: 5
+    concurrency_limit: 1
+servers:
+  - key: "2102-1"
+    mode: "2102"
+    container_name: "kepcs-2102-1"
+    image: "steamrt3:latest"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ReplayTargets) != 1 {
+		t.Fatalf("unexpected replay target count: %d", len(cfg.ReplayTargets))
+	}
+	target := cfg.ReplayTargets[0]
+	if target.Key != "surf-main" || target.Path != filepath.Clean("/data/replays/surf") || target.MaxUploadSizeMB != 128 {
+		t.Fatalf("unexpected replay target: %#v", target)
+	}
+}
