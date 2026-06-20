@@ -225,7 +225,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(realReplayDir, "nested"), 0o755); err != nil {
 		t.Fatalf("mkdir replay dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(realReplayDir, "nested", "test.dem"), []byte("demo"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(realReplayDir, "nested", "test.replay"), []byte("demo"), 0o644); err != nil {
 		t.Fatalf("write replay file: %v", err)
 	}
 
@@ -255,7 +255,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	if !ok || len(files) != 1 {
 		t.Fatalf("unexpected replay files payload: %#v", result["files"])
 	}
-	if files[0]["relativePath"] != "nested/test.dem" {
+	if files[0]["relativePath"] != "nested/test.replay" {
 		t.Fatalf("unexpected relative path: %#v", files[0]["relativePath"])
 	}
 }

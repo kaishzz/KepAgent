@@ -24,6 +24,15 @@ import (
 	"github.com/kaishzz/kepagent/internal/rcon"
 )
 
+var replayExtensions = map[string]struct{}{
+	".replay": {},
+}
+
+func isReplayFileExtension(name string) bool {
+	_, ok := replayExtensions[strings.ToLower(filepath.Ext(name))]
+	return ok
+}
+
 type CancelledError struct {
 	Message string
 	Force   bool
@@ -1384,7 +1393,7 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string) (map[stri
 			return nil
 		}
 		name := info.Name()
-		if strings.ToLower(filepath.Ext(name)) != ".dem" {
+		if !isReplayFileExtension(name) {
 			return nil
 		}
 		relativePath, err := filepath.Rel(basePath, currentPath)
@@ -1434,7 +1443,7 @@ func (r *Runtime) ImportReplay(ctx context.Context, assetID, targetKey, finalFil
 		return nil, err
 	}
 	safeName := strings.TrimSpace(filepath.Base(finalFileName))
-	if safeName == "" || strings.Contains(safeName, "..") || strings.ToLower(filepath.Ext(safeName)) != ".dem" {
+	if safeName == "" || strings.Contains(safeName, "..") || !isReplayFileExtension(safeName) {
 		return nil, fmt.Errorf("invalid replay file name")
 	}
 	tempPath := filepath.Join(r.cfg.ReplayTempDir, fmt.Sprintf("%d-%s.part", time.Now().UnixNano(), safeName))
