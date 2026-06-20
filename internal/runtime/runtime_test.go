@@ -246,7 +246,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 100, "", "updatedAtDesc")
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 100, "", "updatedAtDesc", false)
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestListReplayFilesPaginatesAndSortsByUpdatedAtDesc(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 2, "", "updatedAtDesc")
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 2, "", "updatedAtDesc", false)
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestListReplayFilesPaginatesAndSortsByUpdatedAtDesc(t *testing.T) {
 		t.Fatalf("unexpected page file order: %#v", pageFiles)
 	}
 
-	pageTwo, err := rt.ListReplayFiles(context.Background(), "kz-main", 2, 2, "", "updatedAtDesc")
+	pageTwo, err := rt.ListReplayFiles(context.Background(), "kz-main", 2, 2, "", "updatedAtDesc", false)
 	if err != nil {
 		t.Fatalf("list replay files page 2: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestListReplayFilesSupportsSearchAndSort(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "bbb", "nameAsc")
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "bbb", "nameAsc", false)
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestListReplayFilesSupportsSearchAndSort(t *testing.T) {
 		t.Fatalf("unexpected search result: %#v", result["files"])
 	}
 
-	sorted, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "", "nameDesc")
+	sorted, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "", "nameDesc", false)
 	if err != nil {
 		t.Fatalf("list replay files desc: %v", err)
 	}

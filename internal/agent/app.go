@@ -358,6 +358,7 @@ func (a *App) handleReplayList(ctx context.Context, payload map[string]any, logs
 		requiredInt(payload, "pageSize"),
 		requiredString(payload, "search"),
 		requiredString(payload, "sort"),
+		requiredBool(payload, "fetchAll"),
 	)
 	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
 }
@@ -410,6 +411,26 @@ func requiredInt(payload map[string]any, key string) int {
 		return 0
 	}
 	return parsed
+}
+
+func requiredBool(payload map[string]any, key string) bool {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		normalized := strings.TrimSpace(strings.ToLower(typed))
+		return normalized == "true" || normalized == "1"
+	case float64:
+		return typed != 0
+	case int:
+		return typed != 0
+	default:
+		return strings.TrimSpace(strings.ToLower(fmt.Sprint(value))) == "true"
+	}
 }
 
 func stringSlice(value any) []string {

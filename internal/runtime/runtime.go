@@ -1563,7 +1563,7 @@ func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFil
 	return r.refreshReplayFileEntries(target)
 }
 
-func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pageSize int, search, sortKey string) (map[string]any, error) {
+func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pageSize int, search, sortKey string, fetchAll bool) (map[string]any, error) {
 	target, err := r.replayTarget(targetKey)
 	if err != nil {
 		return nil, err
@@ -1596,13 +1596,25 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pag
 	if total > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
 	}
-	start := (page - 1) * pageSize
-	if start > total {
-		start = total
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
+	start := 0
+	end := total
+	currentPage := 1
+	currentPageSize := pageSize
+	hasMore := false
+
+	if !fetchAll {
+		currentPage = page
+		start = (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end = start + pageSize
+		if end > total {
+			end = total
+		}
+		hasMore = end < total
+	} else if total > 0 {
+		currentPageSize = total
 	}
 
 	pageFiles := make([]map[string]any, 0, end-start)
@@ -1621,14 +1633,27 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pag
 		"modeKey":   target.ModeKey,
 		"label":     target.Label,
 		"files":     pageFiles,
-		"page":      page,
-		"pageSize":  pageSize,
+		"page":      currentPage,
+		"pageSize":  currentPageSize,
 		"total":     total,
-		"totalPages": totalPages,
-		"hasMore":   end < total,
+		"totalPages": func() int {
+			if fetchAll {
+				if total > 0 {
+					return 1
+				}
+				return 0
+			}
+			return totalPages
+		}(),
+		"hasMore":   hasMore,
 		"search":    search,
 		"sort":      sortKey,
-		"message":   fmt.Sprintf("Listed %d replay files (page %d)", total, page),
+		"message": func() string {
+			if fetchAll {
+				return fmt.Sprintf("Listed %d replay files", total)
+			}
+			return fmt.Sprintf("Listed %d replay files (page %d)", total, page)
+		}(),
 	}, nil
 }
 
