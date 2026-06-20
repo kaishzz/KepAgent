@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -215,5 +216,46 @@ func TestSendRCONCommandRequiresTargetHost(t *testing.T) {
 	}
 	if rows[0]["error"] != "RCON host is empty" {
 		t.Fatalf("expected empty host error, got %#v", rows[0]["error"])
+	}
+}
+
+func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
+	tempDir := t.TempDir()
+	realReplayDir := filepath.Join(tempDir, "real-surfreplays")
+	if err := os.MkdirAll(filepath.Join(realReplayDir, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir replay dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(realReplayDir, "nested", "test.dem"), []byte("demo"), 0o644); err != nil {
+		t.Fatalf("write replay file: %v", err)
+	}
+
+	linkPath := filepath.Join(tempDir, "surfreplays")
+	if err := os.Symlink(realReplayDir, linkPath); err != nil {
+		t.Skipf("symlink unavailable on this platform: %v", err)
+	}
+
+	rt := New(&config.Config{
+		ReplayTargets: []config.ReplayTarget{
+			{
+				Key:           "surf-main",
+				Label:         "Surf Replay",
+				Path:          linkPath,
+				Enabled:       true,
+				AllowDownload: true,
+			},
+		},
+	}, nil, slog.Default())
+
+	result, err := rt.ListReplayFiles(context.Background(), "surf-main")
+	if err != nil {
+		t.Fatalf("list replay files: %v", err)
+	}
+
+	files, ok := result["files"].([]map[string]any)
+	if !ok || len(files) != 1 {
+		t.Fatalf("unexpected replay files payload: %#v", result["files"])
+	}
+	if files[0]["relativePath"] != "nested/test.dem" {
+		t.Fatalf("unexpected relative path: %#v", files[0]["relativePath"])
 	}
 }
