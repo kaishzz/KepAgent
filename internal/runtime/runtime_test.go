@@ -246,7 +246,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 100)
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 100, "", "updatedAtDesc")
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	}
 }
 
-func TestListReplayFilesPaginatesAndSortsNewestFirst(t *testing.T) {
+func TestListReplayFilesPaginatesAndSortsByUpdatedAtDesc(t *testing.T) {
 	tempDir := t.TempDir()
 	replayDir := filepath.Join(tempDir, "kzreplays")
 	if err := os.MkdirAll(replayDir, 0o755); err != nil {
@@ -301,7 +301,7 @@ func TestListReplayFilesPaginatesAndSortsNewestFirst(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 2)
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 2, "", "updatedAtDesc")
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -324,12 +324,60 @@ func TestListReplayFilesPaginatesAndSortsNewestFirst(t *testing.T) {
 		t.Fatalf("unexpected page file order: %#v", pageFiles)
 	}
 
-	pageTwo, err := rt.ListReplayFiles(context.Background(), "kz-main", 2, 2)
+	pageTwo, err := rt.ListReplayFiles(context.Background(), "kz-main", 2, 2, "", "updatedAtDesc")
 	if err != nil {
 		t.Fatalf("list replay files page 2: %v", err)
 	}
 	secondFiles, ok := pageTwo["files"].([]map[string]any)
 	if !ok || len(secondFiles) != 1 || secondFiles[0]["name"] != "old.replay" {
 		t.Fatalf("unexpected second page payload: %#v", pageTwo["files"])
+	}
+}
+
+func TestListReplayFilesSupportsSearchAndSort(t *testing.T) {
+	tempDir := t.TempDir()
+	replayDir := filepath.Join(tempDir, "kzreplays")
+	if err := os.MkdirAll(replayDir, 0o755); err != nil {
+		t.Fatalf("mkdir replay dir: %v", err)
+	}
+
+	for _, name := range []string{"ccc.replay", "aaa.replay", "bbb.replay"} {
+		if err := os.WriteFile(filepath.Join(replayDir, name), []byte(name), 0o644); err != nil {
+			t.Fatalf("write replay file: %v", err)
+		}
+	}
+
+	rt := New(&config.Config{
+		ReplayTargets: []config.ReplayTarget{
+			{
+				Key:           "kz-main",
+				Label:         "KZ Replay",
+				Path:          replayDir,
+				Enabled:       true,
+				AllowDownload: true,
+			},
+		},
+	}, nil, slog.Default())
+
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "bbb", "nameAsc")
+	if err != nil {
+		t.Fatalf("list replay files: %v", err)
+	}
+
+	files, ok := result["files"].([]map[string]any)
+	if !ok || len(files) != 1 || files[0]["name"] != "bbb.replay" {
+		t.Fatalf("unexpected search result: %#v", result["files"])
+	}
+
+	sorted, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 10, "", "nameDesc")
+	if err != nil {
+		t.Fatalf("list replay files desc: %v", err)
+	}
+	descFiles, ok := sorted["files"].([]map[string]any)
+	if !ok || len(descFiles) != 3 {
+		t.Fatalf("unexpected desc result: %#v", sorted["files"])
+	}
+	if descFiles[0]["name"] != "ccc.replay" || descFiles[2]["name"] != "aaa.replay" {
+		t.Fatalf("unexpected desc order: %#v", descFiles)
 	}
 }

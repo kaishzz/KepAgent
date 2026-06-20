@@ -356,6 +356,8 @@ func (a *App) handleReplayList(ctx context.Context, payload map[string]any, logs
 		requiredString(payload, "targetKey"),
 		requiredInt(payload, "page"),
 		requiredInt(payload, "pageSize"),
+		requiredString(payload, "search"),
+		requiredString(payload, "sort"),
 	)
 	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
 }

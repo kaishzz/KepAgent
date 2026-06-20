@@ -29,9 +29,9 @@ var replayExtensions = map[string]struct{}{
 }
 
 const (
-	replayListPageSizeDefault = 100
-	replayListPageSizeMax     = 200
-	replayListCacheTTL        = 10 * time.Second
+	replayListPageSizeDefault = 10
+	replayListPageSizeMax     = 50
+	replayListCacheTTL        = 5 * time.Minute
 )
 
 type replayFileEntry struct {
@@ -95,7 +95,34 @@ func New(cfg *config.Config, docker *dockerapi.Client, logger *slog.Logger) *Run
 			rt.groups[group] = append(rt.groups[group], server)
 		}
 	}
+	go rt.warmReplayFileLists()
 	return rt
+}
+
+func (r *Runtime) warmReplayFileLists() {
+	if r == nil || r.cfg == nil || len(r.cfg.ReplayTargets) == 0 {
+		return
+	}
+
+	refresh := func() {
+		for _, target := range r.cfg.ReplayTargets {
+			if !target.Enabled || !target.AllowDownload {
+				continue
+			}
+			if _, _, err := r.refreshReplayFileEntries(target); err != nil {
+				r.emit("warning", "Replay cache warmup failed for %s: %v", target.Key, err)
+			}
+		}
+	}
+
+	refresh()
+
+	ticker := time.NewTicker(replayListCacheTTL)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		refresh()
+	}
 }
 
 func (r *Runtime) SetControlClient(client interface {
@@ -1404,7 +1431,59 @@ func clampReplayListPage(value int) int {
 	return value
 }
 
-func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFileEntry, string, error) {
+func normalizeReplayListSearch(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeReplayListSort(value string) string {
+	switch strings.TrimSpace(value) {
+	case "updatedAtAsc", "updatedAtDesc", "nameAsc", "nameDesc":
+		return strings.TrimSpace(value)
+	default:
+		return "updatedAtDesc"
+	}
+}
+
+func sortReplayFileEntries(files []replayFileEntry, sortKey string) {
+	switch normalizeReplayListSort(sortKey) {
+	case "updatedAtDesc":
+		slices.SortFunc(files, func(a, b replayFileEntry) int {
+			if !a.UpdatedAt.Equal(b.UpdatedAt) {
+				if a.UpdatedAt.After(b.UpdatedAt) {
+					return -1
+				}
+				return 1
+			}
+			return strings.Compare(a.RelativePath, b.RelativePath)
+		})
+	case "nameAsc":
+		slices.SortFunc(files, func(a, b replayFileEntry) int {
+			if compared := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); compared != 0 {
+				return compared
+			}
+			return strings.Compare(a.RelativePath, b.RelativePath)
+		})
+	case "nameDesc":
+		slices.SortFunc(files, func(a, b replayFileEntry) int {
+			if compared := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); compared != 0 {
+				return -compared
+			}
+			return strings.Compare(a.RelativePath, b.RelativePath)
+		})
+	default:
+		slices.SortFunc(files, func(a, b replayFileEntry) int {
+			if !a.UpdatedAt.Equal(b.UpdatedAt) {
+				if a.UpdatedAt.Before(b.UpdatedAt) {
+					return -1
+				}
+				return 1
+			}
+			return strings.Compare(a.RelativePath, b.RelativePath)
+		})
+	}
+}
+
+func (r *Runtime) refreshReplayFileEntries(target config.ReplayTarget) ([]replayFileEntry, string, error) {
 	if !target.AllowDownload {
 		return nil, "", fmt.Errorf("replay target %s does not allow download", target.Key)
 	}
@@ -1417,13 +1496,6 @@ func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFil
 		}
 	}
 	basePath = filepath.Clean(basePath)
-	cacheKey := target.Key + "|" + basePath
-	if cachedValue, ok := r.replayLists.Load(cacheKey); ok {
-		if cached, ok := cachedValue.(replayListCacheEntry); ok && time.Since(cached.CachedAt) < replayListCacheTTL {
-			return cached.Files, basePath, nil
-		}
-	}
-
 	files := []replayFileEntry{}
 
 	if err := filepath.Walk(basePath, func(currentPath string, info os.FileInfo, walkErr error) error {
@@ -1453,15 +1525,7 @@ func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFil
 		return nil, "", err
 	}
 
-	slices.SortFunc(files, func(a, b replayFileEntry) int {
-		if !a.UpdatedAt.Equal(b.UpdatedAt) {
-			if a.UpdatedAt.After(b.UpdatedAt) {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.RelativePath, b.RelativePath)
-	})
+	cacheKey := target.Key + "|" + basePath
 
 	r.replayLists.Store(cacheKey, replayListCacheEntry{
 		Files:     files,
@@ -1473,7 +1537,33 @@ func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFil
 	return files, basePath, nil
 }
 
-func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pageSize int) (map[string]any, error) {
+func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFileEntry, string, error) {
+	basePath, err := filepath.EvalSymlinks(target.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			basePath = target.Path
+		} else {
+			return nil, "", err
+		}
+	}
+	basePath = filepath.Clean(basePath)
+	cacheKey := target.Key + "|" + basePath
+	if cachedValue, ok := r.replayLists.Load(cacheKey); ok {
+		if cached, ok := cachedValue.(replayListCacheEntry); ok {
+			if time.Since(cached.CachedAt) < replayListCacheTTL {
+				return cached.Files, basePath, nil
+			}
+			go func(nextTarget config.ReplayTarget) {
+				_, _, _ = r.refreshReplayFileEntries(nextTarget)
+			}(target)
+			return cached.Files, basePath, nil
+		}
+	}
+
+	return r.refreshReplayFileEntries(target)
+}
+
+func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pageSize int, search, sortKey string) (map[string]any, error) {
 	target, err := r.replayTarget(targetKey)
 	if err != nil {
 		return nil, err
@@ -1485,7 +1575,23 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pag
 
 	page = clampReplayListPage(page)
 	pageSize = clampReplayListPageSize(pageSize)
-	total := len(files)
+	search = normalizeReplayListSearch(search)
+	filteredFiles := make([]replayFileEntry, 0, len(files))
+	for _, item := range files {
+		if search == "" {
+			filteredFiles = append(filteredFiles, item)
+			continue
+		}
+		name := strings.ToLower(item.Name)
+		relativePath := strings.ToLower(item.RelativePath)
+		if strings.Contains(name, search) || strings.Contains(relativePath, search) {
+			filteredFiles = append(filteredFiles, item)
+		}
+	}
+	sortKey = normalizeReplayListSort(sortKey)
+	sortReplayFileEntries(filteredFiles, sortKey)
+
+	total := len(filteredFiles)
 	totalPages := 0
 	if total > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
@@ -1500,7 +1606,7 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pag
 	}
 
 	pageFiles := make([]map[string]any, 0, end-start)
-	for _, item := range files[start:end] {
+	for _, item := range filteredFiles[start:end] {
 		pageFiles = append(pageFiles, map[string]any{
 			"name":         item.Name,
 			"relativePath": item.RelativePath,
@@ -1520,6 +1626,8 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string, page, pag
 		"total":     total,
 		"totalPages": totalPages,
 		"hasMore":   end < total,
+		"search":    search,
+		"sort":      sortKey,
 		"message":   fmt.Sprintf("Listed %d replay files (page %d)", total, page),
 	}, nil
 }
