@@ -32,6 +32,7 @@ const (
 	replayListPageSizeDefault = 10
 	replayListPageSizeMax     = 50
 	replayListCacheTTL        = 5 * time.Minute
+	replayListEmptyCacheTTL   = 10 * time.Second
 )
 
 type replayFileEntry struct {
@@ -44,6 +45,7 @@ type replayFileEntry struct {
 type replayListCacheEntry struct {
 	Files     []replayFileEntry
 	CachedAt  time.Time
+	ExpiresAt time.Time
 	BasePath  string
 	TargetKey string
 }
@@ -1530,6 +1532,12 @@ func (r *Runtime) refreshReplayFileEntries(target config.ReplayTarget) ([]replay
 	r.replayLists.Store(cacheKey, replayListCacheEntry{
 		Files:     files,
 		CachedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(func() time.Duration {
+			if len(files) == 0 {
+				return replayListEmptyCacheTTL
+			}
+			return replayListCacheTTL
+		}()),
 		BasePath:  basePath,
 		TargetKey: target.Key,
 	})
@@ -1550,7 +1558,7 @@ func (r *Runtime) listReplayFileEntries(target config.ReplayTarget) ([]replayFil
 	cacheKey := target.Key + "|" + basePath
 	if cachedValue, ok := r.replayLists.Load(cacheKey); ok {
 		if cached, ok := cachedValue.(replayListCacheEntry); ok {
-			if time.Since(cached.CachedAt) < replayListCacheTTL {
+			if time.Now().Before(cached.ExpiresAt) {
 				return cached.Files, basePath, nil
 			}
 			go func(nextTarget config.ReplayTarget) {
