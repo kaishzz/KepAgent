@@ -100,12 +100,37 @@ func (a *App) buildHeartbeatPayload(ctx context.Context) map[string]any {
 		},
 		"servers": servers,
 		"metadata": map[string]any{
-			"machine":     stdruntime.GOARCH,
-			"node":        hostname,
-			"groupLabels": a.cfg.GroupLabels,
-			"groupOrder":  a.cfg.GroupOrder,
+			"machine":       stdruntime.GOARCH,
+			"node":          hostname,
+			"groupLabels":   a.cfg.GroupLabels,
+			"groupOrder":    a.cfg.GroupOrder,
+			"replayTargets": a.replayTargetsMetadata(),
 		},
 	}
+}
+
+func (a *App) replayTargetsMetadata() []map[string]any {
+	targets := make([]map[string]any, 0, len(a.cfg.ReplayTargets))
+
+	for _, target := range a.cfg.ReplayTargets {
+		if !target.Enabled {
+			continue
+		}
+
+		targets = append(targets, map[string]any{
+			"key":               target.Key,
+			"modeKey":           target.ModeKey,
+			"label":             target.Label,
+			"enabled":           target.Enabled,
+			"allowUpload":       target.AllowUpload,
+			"allowDownload":     target.AllowDownload,
+			"maxUploadSizeMB":   target.MaxUploadSizeMB,
+			"transferLimitMbps": target.TransferLimitMbps,
+			"concurrencyLimit":  target.ConcurrencyLimit,
+		})
+	}
+
+	return targets
 }
 
 func (a *App) reportRuntimeState(ctx context.Context, _ []string) error {

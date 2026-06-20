@@ -1365,29 +1365,36 @@ func (r *Runtime) ListReplayFiles(_ context.Context, targetKey string) (map[stri
 	if !target.AllowDownload {
 		return nil, fmt.Errorf("replay target %s does not allow download", targetKey)
 	}
-	entries, err := os.ReadDir(target.Path)
-	if err != nil {
-		return nil, err
-	}
 	files := []map[string]any{}
-	for _, entry := range entries {
+	if err := filepath.WalkDir(target.Path, func(currentPath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
 		if entry.IsDir() {
-			continue
+			return nil
 		}
 		name := entry.Name()
 		if strings.ToLower(filepath.Ext(name)) != ".dem" {
-			continue
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
-			continue
+			return nil
 		}
+		relativePath, err := filepath.Rel(target.Path, currentPath)
+		if err != nil {
+			return nil
+		}
+		relativePath = filepath.ToSlash(relativePath)
 		files = append(files, map[string]any{
 			"name":         name,
-			"relativePath": name,
+			"relativePath": relativePath,
 			"sizeBytes":    info.Size(),
 			"updatedAt":    info.ModTime().UTC().Format(time.RFC3339),
 		})
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return map[string]any{
 		"ok":        true,
