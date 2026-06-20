@@ -250,10 +250,10 @@ func TestLoadReplayTargets(t *testing.T) {
 api_base_url: "https://example.test"
 api_key: "secret"
 replay_targets:
-  - key: "surf-main"
-    mode_key: "surf"
-    label: "Surf 主服 Replay"
-    path: "/data/replays/surf"
+  - key: "kz-main"
+    mode_key: "2201"
+    label: "攀岩服 Replay"
+    path: "/data/replays/kz"
     enabled: true
     allow_upload: true
     allow_download: true
@@ -278,7 +278,7 @@ servers:
 		t.Fatalf("unexpected replay target count: %d", len(cfg.ReplayTargets))
 	}
 	target := cfg.ReplayTargets[0]
-	if target.Key != "surf-main" || target.Path != filepath.Clean("/data/replays/surf") || target.MaxUploadSizeMB != 128 {
+	if target.Key != "kz-main" || target.Path != filepath.Clean("/data/replays/kz") || target.MaxUploadSizeMB != 128 {
 		t.Fatalf("unexpected replay target: %#v", target)
 	}
 }

@@ -221,7 +221,7 @@ func TestSendRCONCommandRequiresTargetHost(t *testing.T) {
 
 func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	tempDir := t.TempDir()
-	realReplayDir := filepath.Join(tempDir, "real-surfreplays")
+	realReplayDir := filepath.Join(tempDir, "real-kzreplays")
 	if err := os.MkdirAll(filepath.Join(realReplayDir, "nested"), 0o755); err != nil {
 		t.Fatalf("mkdir replay dir: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 		t.Fatalf("write replay file: %v", err)
 	}
 
-	linkPath := filepath.Join(tempDir, "surfreplays")
+	linkPath := filepath.Join(tempDir, "kzreplays")
 	if err := os.Symlink(realReplayDir, linkPath); err != nil {
 		t.Skipf("symlink unavailable on this platform: %v", err)
 	}
@@ -237,8 +237,8 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	rt := New(&config.Config{
 		ReplayTargets: []config.ReplayTarget{
 			{
-				Key:           "surf-main",
-				Label:         "Surf Replay",
+				Key:           "kz-main",
+				Label:         "KZ Replay",
 				Path:          linkPath,
 				Enabled:       true,
 				AllowDownload: true,
@@ -246,7 +246,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "surf-main")
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main")
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
