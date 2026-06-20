@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	stdruntime "runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -350,7 +351,12 @@ func (a *App) handleMonitorStart(ctx context.Context, _ map[string]any, logs *Li
 }
 
 func (a *App) handleReplayList(ctx context.Context, payload map[string]any, logs *LiveLogger) (map[string]any, bool, error) {
-	result, err := a.runtime.ListReplayFiles(ctx, requiredString(payload, "targetKey"))
+	result, err := a.runtime.ListReplayFiles(
+		ctx,
+		requiredString(payload, "targetKey"),
+		requiredInt(payload, "page"),
+		requiredInt(payload, "pageSize"),
+	)
 	return finishLogged(ctx, result, truthy(result["ok"]), err, logs)
 }
 
@@ -392,6 +398,18 @@ func requiredString(payload map[string]any, key string) string {
 	return value
 }
 
+func requiredInt(payload map[string]any, key string) int {
+	value := strings.TrimSpace(fmt.Sprint(payload[key]))
+	if value == "" || value == "<nil>" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
 func stringSlice(value any) []string {
 	values, ok := value.([]any)
 	if !ok {
@@ -426,7 +444,11 @@ func mapSlice(value any) []map[string]any {
 
 func compactFinishResult(commandType string, result map[string]any) any {
 	content, err := json.Marshal(result)
-	if err == nil && len(content) <= 8*1024 {
+	limit := 8 * 1024
+	if commandType == "node.replay_list" {
+		limit = 64 * 1024
+	}
+	if err == nil && len(content) <= limit {
 		return result
 	}
 	compact := map[string]any{

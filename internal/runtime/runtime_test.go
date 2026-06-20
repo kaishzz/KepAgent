@@ -246,7 +246,7 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 		},
 	}, nil, slog.Default())
 
-	result, err := rt.ListReplayFiles(context.Background(), "kz-main")
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 100)
 	if err != nil {
 		t.Fatalf("list replay files: %v", err)
 	}
@@ -257,5 +257,79 @@ func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	}
 	if files[0]["relativePath"] != "nested/test.replay" {
 		t.Fatalf("unexpected relative path: %#v", files[0]["relativePath"])
+	}
+}
+
+func TestListReplayFilesPaginatesAndSortsNewestFirst(t *testing.T) {
+	tempDir := t.TempDir()
+	replayDir := filepath.Join(tempDir, "kzreplays")
+	if err := os.MkdirAll(replayDir, 0o755); err != nil {
+		t.Fatalf("mkdir replay dir: %v", err)
+	}
+
+	files := []struct {
+		name    string
+		modTime time.Time
+	}{
+		{name: "old.replay", modTime: time.Unix(100, 0)},
+		{name: "mid.replay", modTime: time.Unix(200, 0)},
+		{name: "new.replay", modTime: time.Unix(300, 0)},
+	}
+
+	for _, item := range files {
+		path := filepath.Join(replayDir, item.name)
+		if err := os.WriteFile(path, []byte(item.name), 0o644); err != nil {
+			t.Fatalf("write replay file: %v", err)
+		}
+		if err := os.Chtimes(path, item.modTime, item.modTime); err != nil {
+			t.Fatalf("chtimes replay file: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(replayDir, "skip.txt"), []byte("no"), 0o644); err != nil {
+		t.Fatalf("write non replay file: %v", err)
+	}
+
+	rt := New(&config.Config{
+		ReplayTargets: []config.ReplayTarget{
+			{
+				Key:           "kz-main",
+				Label:         "KZ Replay",
+				Path:          replayDir,
+				Enabled:       true,
+				AllowDownload: true,
+			},
+		},
+	}, nil, slog.Default())
+
+	result, err := rt.ListReplayFiles(context.Background(), "kz-main", 1, 2)
+	if err != nil {
+		t.Fatalf("list replay files: %v", err)
+	}
+
+	if result["total"] != 3 {
+		t.Fatalf("unexpected total: %#v", result["total"])
+	}
+	if result["totalPages"] != 2 {
+		t.Fatalf("unexpected total pages: %#v", result["totalPages"])
+	}
+	if result["hasMore"] != true {
+		t.Fatalf("expected hasMore true, got %#v", result["hasMore"])
+	}
+
+	pageFiles, ok := result["files"].([]map[string]any)
+	if !ok || len(pageFiles) != 2 {
+		t.Fatalf("unexpected replay files payload: %#v", result["files"])
+	}
+	if pageFiles[0]["name"] != "new.replay" || pageFiles[1]["name"] != "mid.replay" {
+		t.Fatalf("unexpected page file order: %#v", pageFiles)
+	}
+
+	pageTwo, err := rt.ListReplayFiles(context.Background(), "kz-main", 2, 2)
+	if err != nil {
+		t.Fatalf("list replay files page 2: %v", err)
+	}
+	secondFiles, ok := pageTwo["files"].([]map[string]any)
+	if !ok || len(secondFiles) != 1 || secondFiles[0]["name"] != "old.replay" {
+		t.Fatalf("unexpected second page payload: %#v", pageTwo["files"])
 	}
 }
