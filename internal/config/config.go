@@ -16,6 +16,7 @@ import (
 type Config struct {
 	APIBaseURL                   string            `yaml:"api_base_url"`
 	APIKey                       string            `yaml:"api_key"`
+	KomariInstanceID             string            `yaml:"komari_instance_id"`
 	PollIntervalSeconds          int               `yaml:"poll_interval_seconds"`
 	HeartbeatIntervalSeconds     int               `yaml:"heartbeat_interval_seconds"`
 	RequestTimeoutSeconds        int               `yaml:"request_timeout_seconds"`
@@ -227,6 +228,7 @@ func defaultConfig() *Config {
 func (c *Config) normalize() {
 	c.APIBaseURL = strings.TrimRight(strings.TrimSpace(c.APIBaseURL), "/")
 	c.APIKey = strings.TrimSpace(c.APIKey)
+	c.KomariInstanceID = strings.TrimSpace(c.KomariInstanceID)
 	c.DockerBaseURL = strings.TrimSpace(c.DockerBaseURL)
 	if c.PollIntervalSeconds <= 0 {
 		c.PollIntervalSeconds = 1

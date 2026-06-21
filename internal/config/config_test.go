@@ -282,3 +282,29 @@ servers:
 		t.Fatalf("unexpected replay target: %#v", target)
 	}
 }
+
+func TestLoadKomariInstanceID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+api_base_url: "https://example.test"
+api_key: "secret"
+komari_instance_id: "instance-123"
+servers:
+  - key: "2102-1"
+    mode: "2102"
+    container_name: "kepcs-2102-1"
+    image: "steamrt3:latest"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KomariInstanceID != "instance-123" {
+		t.Fatalf("unexpected komari_instance_id: %s", cfg.KomariInstanceID)
+	}
+}

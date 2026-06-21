@@ -101,11 +101,12 @@ func (a *App) buildHeartbeatPayload(ctx context.Context) map[string]any {
 		},
 		"servers": servers,
 		"metadata": map[string]any{
-			"machine":       stdruntime.GOARCH,
-			"node":          hostname,
-			"groupLabels":   a.cfg.GroupLabels,
-			"groupOrder":    a.cfg.GroupOrder,
-			"replayTargets": a.replayTargetsMetadata(),
+			"machine":          stdruntime.GOARCH,
+			"node":             hostname,
+			"komariInstanceId": a.cfg.KomariInstanceID,
+			"groupLabels":      a.cfg.GroupLabels,
+			"groupOrder":       a.cfg.GroupOrder,
+			"replayTargets":    a.replayTargetsMetadata(),
 		},
 	}
 }
