@@ -470,7 +470,7 @@ func compactFinishResult(commandType string, result map[string]any) any {
 	content, err := json.Marshal(result)
 	limit := 8 * 1024
 	if commandType == "node.replay_list" {
-		limit = 64 * 1024
+		return result
 	}
 	if err == nil && len(content) <= limit {
 		return result
