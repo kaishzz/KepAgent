@@ -21,6 +21,7 @@ type Config struct {
 	HeartbeatIntervalSeconds     int               `yaml:"heartbeat_interval_seconds"`
 	RequestTimeoutSeconds        int               `yaml:"request_timeout_seconds"`
 	DockerBaseURL                string            `yaml:"docker_base_url"`
+	DockerProxyURL               string            `yaml:"docker_proxy_url"`
 	GroupLabels                  map[string]string `yaml:"group_labels"`
 	GroupOrder                   []string          `yaml:"group_order"`
 	ServerQueryEnabled           bool              `yaml:"server_query_enabled"`
@@ -230,6 +231,7 @@ func (c *Config) normalize() {
 	c.APIKey = strings.TrimSpace(c.APIKey)
 	c.KomariInstanceID = strings.TrimSpace(c.KomariInstanceID)
 	c.DockerBaseURL = strings.TrimSpace(c.DockerBaseURL)
+	c.DockerProxyURL = strings.TrimSpace(c.DockerProxyURL)
 	if c.PollIntervalSeconds <= 0 {
 		c.PollIntervalSeconds = 1
 	}
@@ -288,6 +290,7 @@ func (c *Config) normalize() {
 		if server.RestartPolicy == "" {
 			server.RestartPolicy = "unless-stopped"
 		}
+		applyDockerProxyEnv(server, c.DockerProxyURL)
 		for j := range server.Ports {
 			if server.Ports[j].Protocol == "" {
 				server.Ports[j].Protocol = "tcp"
@@ -636,6 +639,21 @@ func defaultCommandTemplate() []string {
 		"bash",
 		"-lc",
 		"cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers {{.maxplayers}} +game_type 0 +game_mode 0 +map de_dust2 -port {{.port}} -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection {{.collection_id}} +exec {{.exec_cfg}}",
+	}
+}
+
+func applyDockerProxyEnv(server *Server, proxyURL string) {
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL == "" {
+		return
+	}
+	if server.Env == nil {
+		server.Env = map[string]string{}
+	}
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"} {
+		if strings.TrimSpace(server.Env[key]) == "" {
+			server.Env[key] = proxyURL
+		}
 	}
 }
 

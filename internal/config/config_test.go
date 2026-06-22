@@ -308,3 +308,47 @@ servers:
 		t.Fatalf("unexpected komari_instance_id: %s", cfg.KomariInstanceID)
 	}
 }
+
+func TestLoadAppliesDockerProxyEnvWithoutOverridingExplicitServerEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+api_base_url: "https://example.test"
+api_key: "secret"
+docker_proxy_url: "http://192.168.0.1:7890"
+defaults:
+  env:
+    TZ: "Asia/Shanghai"
+servers:
+  - key: "2102-1"
+    mode: "2102"
+    container_name: "kepcs-2102-1"
+    image: "steamrt3:latest"
+    env:
+      HTTP_PROXY: "http://server-override:8888"
+      all_proxy: "socks5://server-override:1080"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DockerProxyURL != "http://192.168.0.1:7890" {
+		t.Fatalf("unexpected docker_proxy_url: %s", cfg.DockerProxyURL)
+	}
+	server := cfg.Servers[0]
+	if server.Env["HTTP_PROXY"] != "http://server-override:8888" {
+		t.Fatalf("expected explicit HTTP_PROXY to win, got %#v", server.Env["HTTP_PROXY"])
+	}
+	if server.Env["all_proxy"] != "socks5://server-override:1080" {
+		t.Fatalf("expected explicit all_proxy to win, got %#v", server.Env["all_proxy"])
+	}
+	for _, key := range []string{"HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"} {
+		if server.Env[key] != "http://192.168.0.1:7890" {
+			t.Fatalf("expected %s to inherit proxy, got %#v", key, server.Env[key])
+		}
+	}
+}
