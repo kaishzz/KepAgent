@@ -25,8 +25,8 @@
 
 - 本仓库公开仅用于源码托管和 GitHub Actions 自动构建，不维护公开 YAML 配置示例
 - 本地运行默认读取 `config.yaml`
-- `config.yaml`、`config1.yaml`、`config2.yaml` 都属于本地私有配置，必须保持忽略，不要提交或推送
-- 如果新增或修改 `internal/config/config.go` 中的配置字段，要检查本地存在的 `config.yaml`、`config1.yaml`、`config2.yaml` 是否需要同步结构
+- `config.yaml` 属于本地私有配置，必须保持忽略，不要提交或推送
+- 如果新增或修改 `internal/config/config.go` 中的配置字段，要检查本地存在的 `config.yaml` 是否需要同步结构
 - 同步本地私有配置时，保留现有实际数据，例如服务器 key、容器名、分组、端口、挂载、标签、命令，以及各模式专属值
 - 同步的是名称、结构和预期 key，不要在未明确要求的情况下覆盖已有的密钥、令牌、密码、URL、路径或其他用户数据
 - 除非用户明确要求，否则不要打印任何密钥内容

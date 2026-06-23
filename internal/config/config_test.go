@@ -217,28 +217,24 @@ servers:
 	}
 }
 
-func TestPrivateConfigsLoadIfPresent(t *testing.T) {
+func TestPrivateConfigLoadsIfPresent(t *testing.T) {
 	t.Setenv("KEPAGENT_API_BASE_URL", "https://example.test")
 	t.Setenv("KEPAGENT_API_KEY", "secret")
 
-	for _, path := range []string{
-		filepath.Join("..", "..", "config1.yaml"),
-		filepath.Join("..", "..", "config2.yaml"),
-	} {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Skipf("%s is not present", path)
-		}
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatalf("load %s: %v", path, err)
-		}
-		if len(cfg.Servers) == 0 {
-			t.Fatalf("%s has no servers", path)
-		}
-		for _, server := range cfg.Servers {
-			if server.Image == "" || len(server.Command) == 0 || len(server.Ports) == 0 {
-				t.Fatalf("%s did not expand server %s: %#v", path, server.Key, server)
-			}
+	path := filepath.Join("..", "..", "config.yaml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("%s is not present", path)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
+	if len(cfg.Servers) == 0 {
+		t.Fatalf("%s has no servers", path)
+	}
+	for _, server := range cfg.Servers {
+		if server.Image == "" || len(server.Command) == 0 || len(server.Ports) == 0 {
+			t.Fatalf("%s did not expand server %s: %#v", path, server.Key, server)
 		}
 	}
 }
