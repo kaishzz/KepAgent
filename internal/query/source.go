@@ -62,6 +62,11 @@ func parseInfo(payload []byte) (map[string]any, error) {
 	players := int(payload[offset])
 	maxPlayers := int(payload[offset+1])
 	bots := int(payload[offset+2])
+	if players >= bots {
+		players -= bots
+	} else {
+		players = 0
+	}
 	serverType := string(payload[offset+3])
 	environment := string(payload[offset+4])
 	visibility := "public"
@@ -76,7 +81,6 @@ func parseInfo(payload []byte) (map[string]any, error) {
 		"appId":       appID,
 		"online":      players,
 		"capacity":    maxPlayers,
-		"bots":        bots,
 		"serverType":  serverType,
 		"environment": environment,
 		"visibility":  visibility,
