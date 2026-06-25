@@ -61,12 +61,6 @@ func parseInfo(payload []byte) (map[string]any, error) {
 	offset += 2
 	players := int(payload[offset])
 	maxPlayers := int(payload[offset+1])
-	bots := int(payload[offset+2])
-	if players >= bots {
-		players -= bots
-	} else {
-		players = 0
-	}
 	serverType := string(payload[offset+3])
 	environment := string(payload[offset+4])
 	visibility := "public"
