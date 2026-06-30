@@ -19,6 +19,7 @@ type ContainerState struct {
 	Status       string `json:"Status"`
 	Running      bool   `json:"Running"`
 	RestartCount int    `json:"RestartCount"`
+	StartedAt    string `json:"StartedAt"`
 }
 
 type NetworkSettings struct {

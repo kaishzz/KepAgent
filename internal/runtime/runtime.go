@@ -247,6 +247,21 @@ func (r *Runtime) InspectServer(ctx context.Context, key string) (map[string]any
 	base["id"] = container.ID
 	base["image"] = firstNonEmpty(container.Config.Image, server.Image, container.Image)
 	base["restartCount"] = restartCount
+	startedAt := strings.TrimSpace(container.State.StartedAt)
+	base["startedAt"] = nil
+	base["uptimeSeconds"] = nil
+	if startedAt != "" && !strings.HasPrefix(startedAt, "0001-01-01T00:00:00") {
+		if parsedStartedAt, err := time.Parse(time.RFC3339Nano, startedAt); err == nil {
+			base["startedAt"] = parsedStartedAt.UTC().Format(time.RFC3339)
+			if status == "running" {
+				uptimeSeconds := int(time.Since(parsedStartedAt).Seconds())
+				if uptimeSeconds < 0 {
+					uptimeSeconds = 0
+				}
+				base["uptimeSeconds"] = uptimeSeconds
+			}
+		}
+	}
 
 	if status == "running" && r.cfg.ServerQueryEnabled {
 		info, err := query.Info(r.cfg.ServerQueryHost, r.serverQueryPort(server), r.cfg.ServerQueryTimeout())
