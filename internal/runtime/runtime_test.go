@@ -219,6 +219,32 @@ func TestSendRCONCommandRequiresTargetHost(t *testing.T) {
 	}
 }
 
+func TestFormatMonitorProfilesMessageIncludesProfileAndServerCounts(t *testing.T) {
+	got := formatMonitorProfilesMessage(true, 3, 0, 12)
+	want := "Monitor profiles checked: 3 profiles succeeded, 0 failed; started 12 configured servers"
+	if got != want {
+		t.Fatalf("unexpected message: %s", got)
+	}
+}
+
+func TestCountMonitorProfileStartServerKeysSumsAcrossProfiles(t *testing.T) {
+	results := []map[string]any{
+		{
+			"startServerKeys": []string{"2102-1", "2102-2"},
+		},
+		{
+			"startServerKeys": []any{"2201-1"},
+		},
+		{
+			"profileKey": "empty",
+		},
+	}
+
+	if got := countMonitorProfileStartServerKeys(results); got != 3 {
+		t.Fatalf("unexpected start server count: %d", got)
+	}
+}
+
 func TestListReplayFilesFollowsSymlinkTarget(t *testing.T) {
 	tempDir := t.TempDir()
 	realReplayDir := filepath.Join(tempDir, "real-kzreplays")

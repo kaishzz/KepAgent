@@ -854,17 +854,15 @@ func (r *Runtime) monitorProfilesCheck(ctx context.Context, startAfterSuccess bo
 		result["startServerKeys"] = startKeys
 		results = append(results, result)
 	}
-	actionText := "checked"
-	if startAfterSuccess {
-		actionText = "checked and started configured servers"
-	}
+	startedServers := countMonitorProfileStartServerKeys(results)
 	return map[string]any{
 		"ok":             failed == 0,
 		"profileResults": results,
 		"success":        success,
 		"failed":         failed,
 		"total":          len(results),
-		"message":        fmt.Sprintf("Monitor profiles %s: %d succeeded, %d failed", actionText, success, failed),
+		"startedServers": startedServers,
+		"message":        formatMonitorProfilesMessage(startAfterSuccess, success, failed, startedServers),
 	}, nil
 }
 
@@ -979,6 +977,39 @@ func (r *Runtime) StartAfterMonitor(ctx context.Context, monitorServerKey string
 	}
 	result["message"] = fmt.Sprintf("Started %d servers after monitor success", asInt(result["total"]))
 	return result, nil
+}
+
+func formatMonitorProfilesMessage(startAfterSuccess bool, success int, failed int, startedServers int) string {
+	if startAfterSuccess {
+		return fmt.Sprintf(
+			"Monitor profiles checked: %d profiles succeeded, %d failed; started %d configured servers",
+			success,
+			failed,
+			startedServers,
+		)
+	}
+
+	return fmt.Sprintf("Monitor profiles checked: %d profiles succeeded, %d failed", success, failed)
+}
+
+func countMonitorProfileStartServerKeys(results []map[string]any) int {
+	total := 0
+
+	for _, result := range results {
+		startServerKeys, ok := result["startServerKeys"]
+		if !ok {
+			continue
+		}
+
+		switch typed := startServerKeys.(type) {
+		case []string:
+			total += len(typed)
+		case []any:
+			total += len(typed)
+		}
+	}
+
+	return total
 }
 
 func (r *Runtime) baseServerPayload(server config.Server) map[string]any {
