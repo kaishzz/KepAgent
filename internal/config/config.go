@@ -72,7 +72,7 @@ type Server struct {
 	Slot              int               `yaml:"slot"`
 	Port              int               `yaml:"port"`
 	ExecConfig        string            `yaml:"exec_cfg"`
-	CollectionID      string            `yaml:"collection_id"`
+	WorkshopMapID     string            `yaml:"workshop_map_id"`
 	MaxPlayers        int               `yaml:"maxplayers"`
 	Image             string            `yaml:"image"`
 	Groups            []string          `yaml:"groups"`
@@ -111,7 +111,7 @@ type ServerDefaults struct {
 	RestartPolicy     string            `yaml:"restart_policy"`
 	StartAfterMonitor *bool             `yaml:"start_after_monitor"`
 	MaxPlayers        int               `yaml:"maxplayers"`
-	CollectionID      string            `yaml:"collection_id"`
+	WorkshopMapID     string            `yaml:"workshop_map_id"`
 }
 
 func (d *ServerDefaults) UnmarshalYAML(value *yaml.Node) error {
@@ -129,7 +129,7 @@ func (d *ServerDefaults) UnmarshalYAML(value *yaml.Node) error {
 type Mode struct {
 	Label             string            `yaml:"label"`
 	Groups            []string          `yaml:"groups"`
-	CollectionID      string            `yaml:"collection_id"`
+	WorkshopMapID     string            `yaml:"workshop_map_id"`
 	MaxPlayers        int               `yaml:"maxplayers"`
 	CommandTemplate   []string          `yaml:"command_template"`
 	Command           []string          `yaml:"command"`
@@ -383,8 +383,8 @@ func applyDefaults(server *Server, defaults ServerDefaults) {
 	if server.MaxPlayers <= 0 {
 		server.MaxPlayers = defaults.MaxPlayers
 	}
-	if server.CollectionID == "" {
-		server.CollectionID = defaults.CollectionID
+	if server.WorkshopMapID == "" {
+		server.WorkshopMapID = defaults.WorkshopMapID
 	}
 }
 
@@ -392,8 +392,8 @@ func applyMode(server *Server, mode Mode, original Server) {
 	if len(mode.Groups) > 0 && len(server.Groups) == 0 {
 		server.Groups = cloneStrings(mode.Groups)
 	}
-	if original.CollectionID == "" && mode.CollectionID != "" {
-		server.CollectionID = mode.CollectionID
+	if original.WorkshopMapID == "" && mode.WorkshopMapID != "" {
+		server.WorkshopMapID = mode.WorkshopMapID
 	}
 	if original.MaxPlayers <= 0 && mode.MaxPlayers > 0 {
 		server.MaxPlayers = mode.MaxPlayers
@@ -614,7 +614,7 @@ func renderCommand(command []string, server Server) []string {
 		"slot":          server.Slot,
 		"port":          server.Port,
 		"exec_cfg":      server.ExecConfig,
-		"collection_id": server.CollectionID,
+		"workshop_map_id": server.WorkshopMapID,
 		"maxplayers":    server.MaxPlayers,
 	}
 	rendered := make([]string, 0, len(command))
@@ -638,7 +638,7 @@ func defaultCommandTemplate() []string {
 	return []string{
 		"bash",
 		"-lc",
-		"cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers {{.maxplayers}} +game_type 0 +game_mode 0 +map de_dust2 -port {{.port}} -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_collection {{.collection_id}} +exec {{.exec_cfg}}",
+		"cd /cs2/game/bin/linuxsteamrt64 && exec ./cs2 -dedicated -console -high -maxplayers {{.maxplayers}} +game_type 0 +game_mode 0 +map de_dust2 -port {{.port}} -ip 0.0.0.0 -disable_workshop_command_filtering +host_workshop_map {{.workshop_map_id}} +exec {{.exec_cfg}}",
 	}
 }
 

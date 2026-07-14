@@ -55,7 +55,7 @@ api_base_url: "https://example.test"
 api_key: "secret"
 defaults:
   image: "steamrt3:latest"
-  collection_id: "wrong-default"
+  workshop_map_id: "wrong-default"
   maxplayers: 10
   entrypoint: ["/entrypoint.sh"]
   stdin_open: true
@@ -68,7 +68,7 @@ defaults:
       mode: "rw"
 modes:
   "2102":
-    collection_id: "3292908214"
+    workshop_map_id: "3292908214"
     maxplayers: 64
     start_after_monitor: false
     env:
@@ -127,7 +127,7 @@ servers:
 	if len(server.Command) != 3 || !strings.Contains(server.Command[2], "-port 28010") || !strings.Contains(server.Command[2], "+exec kepcs_2102_1.cfg") {
 		t.Fatalf("unexpected command: %#v", server.Command)
 	}
-	if !strings.Contains(server.Command[2], "+host_workshop_collection 3292908214") || !strings.Contains(server.Command[2], "-maxplayers 64") {
+	if !strings.Contains(server.Command[2], "+host_workshop_map 3292908214") || !strings.Contains(server.Command[2], "-maxplayers 64") {
 		t.Fatalf("mode values did not override defaults: %s", server.Command[2])
 	}
 }
@@ -139,6 +139,7 @@ func TestServerOverridesModeAndDefaults(t *testing.T) {
 api_base_url: "https://example.test"
 api_key: "secret"
 defaults:
+  workshop_map_id: "global-map"
   image: "steamrt3:latest"
   stdin_open: true
   tty: true
@@ -156,6 +157,7 @@ defaults:
       container_path: "/data/default"
 modes:
   "2102":
+    workshop_map_id: "group-map"
     stdin_open: false
     tty: false
     env:
@@ -175,6 +177,7 @@ servers:
   - key: "2102-1"
     mode: "2102"
     container_name: "kepcs-2102-1"
+    workshop_map_id: "server-map"
     stdin_open: true
     tty: true
     env:
@@ -214,6 +217,9 @@ servers:
 	}
 	if !server.StdinOpen || !server.TTY {
 		t.Fatalf("server bool overrides should win: stdin_open=%v tty=%v", server.StdinOpen, server.TTY)
+	}
+	if server.WorkshopMapID != "server-map" {
+		t.Fatalf("server workshop map should override group and global: %s", server.WorkshopMapID)
 	}
 }
 
